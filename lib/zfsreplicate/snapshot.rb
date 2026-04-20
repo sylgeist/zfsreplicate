@@ -16,11 +16,15 @@ module ZFSReplicate
 
       if (m = PATTERN.match(tag))
         prefix = m[1]
-        t = Time.utc(
-          m[2][0, 4].to_i, m[2][4, 2].to_i, m[2][6, 2].to_i,
-          m[3][0, 2].to_i, m[3][2, 2].to_i, m[3][4, 2].to_i
-        )
-        new(dataset, tag, t, prefix)
+        begin
+          t = Time.utc(
+            m[2][0, 4].to_i, m[2][4, 2].to_i, m[2][6, 2].to_i,
+            m[3][0, 2].to_i, m[3][2, 2].to_i, m[3][4, 2].to_i
+          )
+          new(dataset, tag, t, prefix)
+        rescue ArgumentError
+          new(dataset, tag, nil, nil)
+        end
       else
         new(dataset, tag, nil, nil)
       end
