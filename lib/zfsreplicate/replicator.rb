@@ -1,4 +1,5 @@
 # lib/zfsreplicate/replicator.rb
+require 'set'
 require 'shellwords'
 require_relative 'log'
 require_relative 'snapshot'
