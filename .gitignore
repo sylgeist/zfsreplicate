@@ -1,0 +1,26 @@
+# Ruby
+*.gem
+*.rbc
+/.config
+/coverage/
+/InstalledFiles
+/pkg/
+/spec/reports/
+/test/tmp/
+/test/version_tmp/
+/tmp/
+
+# Bundler
+/.bundle/
+/vendor/bundle/
+
+# Environment
+.env
+.env.*
+
+# Editor
+.DS_Store
+*.swp
+*.swo
+.idea/
+.vscode/
