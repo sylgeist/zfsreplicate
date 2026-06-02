@@ -1,3 +1,4 @@
+# frozen_string_literal: true
 # lib/zfsreplicate/snapshot.rb
 require 'time'
 

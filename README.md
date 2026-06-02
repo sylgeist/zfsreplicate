@@ -32,6 +32,7 @@ replications:
       host: 192.168.1.10      # omit for local dataset
       user: root
       dataset: tank/vms
+      identity: /root/.ssh/replicate_key   # optional SSH key
     destination:
       host: 192.168.1.20
       user: root
@@ -39,6 +40,7 @@ replications:
     recursive: false
     keep_snapshots: 14
     snapshot_prefix: zfsreplicate
+    force: false              # allow a full send to an existing destination
 ```
 
 Use a different config file with `-c`:
@@ -56,13 +58,16 @@ zfsreplicate -c /etc/zfsreplicate.yml list
 | `source.host` | no | *(local)* | Remote host; omit for local dataset |
 | `source.user` | no | `root` | SSH user |
 | `source.port` | no | `22` | SSH port |
+| `source.identity` | no | *(ssh default)* | Path to an SSH private key (`ssh -i`) |
 | `destination.dataset` | yes | — | ZFS dataset path on destination |
 | `destination.host` | no | *(local)* | Remote host; omit for local dataset |
 | `destination.user` | no | `root` | SSH user |
 | `destination.port` | no | `22` | SSH port |
+| `destination.identity` | no | *(ssh default)* | Path to an SSH private key (`ssh -i`) |
 | `recursive` | no | `false` | Pass `-R` to `zfs send` |
 | `keep_snapshots` | no | `7` | Number of managed snapshots to retain on each side |
 | `snapshot_prefix` | no | `zfsreplicate` | Prefix for auto-created snapshot names |
+| `force` | no | `false` | Permit a full `zfs recv -F` to a destination that already exists but shares no snapshot (overwrites it) |
 
 ### Snapshot naming
 
@@ -88,6 +93,7 @@ Options:
   -c, --config FILE   Config file (default: ~/.config/zfsreplicate/config.yml)
   -v, --verbose       Verbose output
   -n, --dry-run       Print actions without executing
+  -V, --version       Print version and exit
 ```
 
 ### List configured replications
@@ -134,7 +140,9 @@ Each `sync` run:
 4. Sends an **incremental** stream (`zfs send -I`) if a common snapshot exists, or a **full** stream if the destination is empty
 5. Prunes old managed snapshots on both sides, keeping the most recent `keep_snapshots`
 
-If the destination has managed snapshots but shares none with the source, the job aborts with an error — this requires manual intervention (e.g. `zfs destroy` stale snapshots on the destination before re-running).
+If there is no common snapshot and the destination dataset **already exists**, the job aborts rather than overwriting it with a full `zfs recv -F` — this requires manual intervention (e.g. `zfs destroy` the stale destination before re-running) or setting `force: true` to opt into the overwrite. A full send to a destination that does not yet exist is always allowed.
+
+When **both** endpoints are remote, the stream is relayed through the host running `zfsreplicate` (source → here → destination) rather than sent host-to-host; run the tool on one of the two nodes to avoid the extra hop.
 
 ## SSH setup
 
@@ -160,5 +168,9 @@ ruby -Ilib -Itest test/run_all.rb
 ## Known limitations
 
 - Resume (`zfs send -s` / `zfs recv -s`) is not yet supported
-- Pipeline exit status reflects only the last command (`zfs recv`); a silent `zfs send` failure will not be caught until the next sync detects missing snapshots
 - Jobs run sequentially; no parallelism
+- When both endpoints are remote, the stream is relayed through the orchestrating host
+
+## License
+
+MIT — see [LICENSE](LICENSE).

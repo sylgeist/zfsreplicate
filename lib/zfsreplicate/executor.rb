@@ -1,3 +1,4 @@
+# frozen_string_literal: true
 require 'open3'
 require 'shellwords'
 require_relative 'log'
@@ -37,11 +38,32 @@ module ZFSReplicate
     end
 
     # Stream src_cmd | dst_cmd, return dst stdout. Used for zfs send | zfs recv.
+    #
+    # Connects the two commands' stdio in-process (Open3.pipeline_r) rather than
+    # via a shell pipe, so a failure on EITHER side is detected — a shell pipe's
+    # exit status reflects only the last command, which would silently swallow a
+    # failed `zfs send`.
     def run_pipeline(src_cmd, dst_cmd)
       full_src = local? ? src_cmd : "#{@ssh_prefix} #{Shellwords.escape(src_cmd)}"
-      stdout, stderr, status = Open3.capture3("#{full_src} | #{dst_cmd}")
-      unless status.success?
-        raise ExecutorError, "pipeline failed (status #{status.exitstatus}): #{stderr.strip}"
+      ZFSReplicate.logger.debug("exec pipeline: #{full_src} | #{dst_cmd}")
+
+      err_r, err_w = IO.pipe
+      last_stdout, wait_threads = Open3.pipeline_r(
+        ['/bin/sh', '-c', full_src],
+        ['/bin/sh', '-c', dst_cmd],
+        err: err_w
+      )
+      err_w.close
+      err_reader = Thread.new { err_r.read }
+      stdout = last_stdout.read
+      last_stdout.close
+      stderr = err_reader.value
+      err_r.close
+
+      statuses = wait_threads.map(&:value)
+      failed = statuses.find { |s| !s.success? }
+      if failed
+        raise ExecutorError, "pipeline failed (status #{failed.exitstatus}): #{stderr.strip}"
       end
       stdout
     end
