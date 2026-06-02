@@ -24,6 +24,18 @@ module ZFSReplicate
       end
     end
 
+    def self.resume_send_command(token:)
+      "zfs send -t #{token}"
+    end
+
+    def self.recv_command(dataset:, fresh:, resumable:)
+      parts = ['zfs recv']
+      parts << '-F' if fresh
+      parts << '-s' if resumable
+      parts << dataset
+      parts.join(' ')
+    end
+
     def self.snapshots_to_prune(snaps, keep:)
       sorted = snaps.sort
       sorted.length > keep ? sorted[0...(sorted.length - keep)] : []
