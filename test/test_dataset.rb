@@ -81,4 +81,23 @@ class TestDataset < Minitest::Test
     ds = ZFSReplicate::Dataset.new('tank/missing', executor: exec)
     refute ds.exists?
   end
+
+  def test_resume_token_returns_value
+    exec = MockExecutor.new("1-abc123\n")
+    ds = ZFSReplicate::Dataset.new('backup/vms', executor: exec)
+    assert_equal '1-abc123', ds.resume_token
+    assert_match /zfs get -H -o value receive_resume_token backup\/vms/, exec.last_cmd
+  end
+
+  def test_resume_token_nil_when_dash
+    exec = MockExecutor.new("-\n")
+    ds = ZFSReplicate::Dataset.new('backup/vms', executor: exec)
+    assert_nil ds.resume_token
+  end
+
+  def test_resume_token_nil_when_dataset_missing
+    exec = RaisingExecutor.new
+    ds = ZFSReplicate::Dataset.new('backup/vms', executor: exec)
+    assert_nil ds.resume_token
+  end
 end
