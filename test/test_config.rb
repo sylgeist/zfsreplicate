@@ -133,10 +133,16 @@ class TestConfig < Minitest::Test
     f.close
   end
 
-  def test_retry_settings_default
+  def test_max_retries_default
     f = write_config(VALID_CONFIG)
     rep = ZFSReplicate::Config.load(f.path).replications.first
     assert_equal 3, rep.max_retries
+    f.close
+  end
+
+  def test_retry_delay_default
+    f = write_config(VALID_CONFIG)
+    rep = ZFSReplicate::Config.load(f.path).replications.first
     assert_equal 5, rep.retry_delay
     f.close
   end
@@ -150,13 +156,15 @@ class TestConfig < Minitest::Test
 
   def test_rejects_negative_max_retries
     f = write_config(VALID_CONFIG + "    max_retries: -1\n")
-    assert_raises(ZFSReplicate::ConfigError) { ZFSReplicate::Config.load(f.path) }
+    err = assert_raises(ZFSReplicate::ConfigError) { ZFSReplicate::Config.load(f.path) }
+    assert_match(/max_retries/, err.message)
     f.close
   end
 
   def test_rejects_non_integer_retry_delay
     f = write_config(VALID_CONFIG + "    retry_delay: fast\n")
-    assert_raises(ZFSReplicate::ConfigError) { ZFSReplicate::Config.load(f.path) }
+    err = assert_raises(ZFSReplicate::ConfigError) { ZFSReplicate::Config.load(f.path) }
+    assert_match(/retry_delay/, err.message)
     f.close
   end
 end

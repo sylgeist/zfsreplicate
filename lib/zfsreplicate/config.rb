@@ -67,7 +67,8 @@ module ZFSReplicate
     end
 
     def non_negative_int(hash, key, default)
-      value = hash.fetch(key, default)
+      return default unless hash.key?(key)
+      value = hash.fetch(key)
       unless value.is_a?(Integer) && value >= 0
         raise ConfigError, "'#{key}' must be a non-negative integer"
       end
