@@ -78,6 +78,19 @@ module ZFSReplicate
       src_ds = Dataset.new(@cfg.source.dataset, executor: src_exec)
       dst_ds = Dataset.new(@cfg.destination.dataset, executor: dst_exec)
 
+      recv_resume = self.class.recv_command(dataset: @cfg.destination.dataset,
+                                            fresh: false, resumable: true)
+
+      if @cfg.resume && dst_ds.resume_token
+        ZFSReplicate.logger.info(
+          "Resuming interrupted transfer to #{@cfg.destination.dataset}"
+        )
+        perform_transfer(
+          src_exec, dst_exec, dst_ds,
+          fresh_send: nil, recv_fresh: nil, recv_resume: recv_resume
+        )
+      end
+
       tag = Snapshot.generate_name(@cfg.source.dataset,
                                    prefix: @cfg.snapshot_prefix).split('@').last
       ZFSReplicate.logger.info("Creating snapshot #{@cfg.source.dataset}@#{tag}")
@@ -99,8 +112,6 @@ module ZFSReplicate
                                            recursive: @cfg.recursive)
       recv_fresh = self.class.recv_command(dataset: @cfg.destination.dataset,
                                            fresh: true, resumable: @cfg.resume)
-      recv_resume = self.class.recv_command(dataset: @cfg.destination.dataset,
-                                            fresh: false, resumable: true)
 
       ZFSReplicate.logger.info("Sending #{latest.tag} (#{common ? 'incremental' : 'full'})")
       perform_transfer(src_exec, dst_exec, dst_ds,

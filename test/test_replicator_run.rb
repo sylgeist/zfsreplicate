@@ -165,13 +165,14 @@ class TestReplicatorRun < Minitest::Test
       [[/zfs list -t snapshot/, SRC_THREE]],
       [[/zfs list -t snapshot/, ""],
        [/zfs list -H -o name/, :raise],
-       [/receive_resume_token/, ["-", "1-resumetoken"]]],
+       [/receive_resume_token/, ["-", "-", "1-resumetoken"]]],
       replication,
       src_failures: 1
     )
     rep.run
     assert_equal 2, @src.pipelines.length
     assert_equal 'zfs send -t 1-resumetoken', @src.pipelines[1][0]
+    assert_equal 'zfs recv -s backup/vms', @src.pipelines[1][1]
     assert_equal [5], @delays
   end
 
@@ -187,6 +188,25 @@ class TestReplicatorRun < Minitest::Test
     assert_raises(ZFSReplicate::ExecutorError) { rep.run }
     assert_equal 4, @src.pipelines.length
     assert_equal [5, 10, 20], @delays
+  end
+
+  def test_resumes_leftover_token_before_creating_snapshot
+    rep = build(
+      [[/zfs list -t snapshot/, SRC_THREE]],
+      [[/zfs list -t snapshot/, ""],
+       [/zfs list -H -o name/, :raise],
+       [/receive_resume_token/, ["1-leftover", "1-leftover", "-"]]],
+      replication
+    )
+    rep.run
+    # First pipeline is the leftover resume; a fresh send follows.
+    assert_equal 'zfs send -t 1-leftover', @src.pipelines[0][0]
+    assert_equal 'zfs recv -s backup/vms', @src.pipelines[0][1]
+    assert_equal 2, @src.pipelines.length
+    # The leftover resume happens before the new source snapshot is created.
+    resume_idx = @src.events.index { |kind, v| kind == :pipeline && v == 'zfs send -t 1-leftover' }
+    snap_idx   = @src.events.index { |kind, v| kind == :run && v =~ /\Azfs snapshot / }
+    assert resume_idx < snap_idx, "expected leftover resume before snapshot creation"
   end
 
   def test_resume_disabled_is_single_attempt_no_retry
