@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 # lib/zfsreplicate/config.rb
 require 'yaml'
+require 'tmpdir'
 
 module ZFSReplicate
   class ConfigError < StandardError; end
@@ -17,7 +18,9 @@ module ZFSReplicate
   )
 
   class Config
-    attr_reader :replications
+    DEFAULT_LOCK_DIR = File.join(Dir.tmpdir, 'zfsreplicate-locks')
+
+    attr_reader :replications, :concurrency, :lock_dir
 
     def self.load(path)
       raise ConfigError, "Config file not found: #{path}" unless File.exist?(path)
@@ -30,6 +33,8 @@ module ZFSReplicate
       list = raw.fetch('replications')
       raise ConfigError, "'replications' must be a list" unless list.is_a?(Array)
       @replications = list.map { |r| parse_replication(r) }
+      @concurrency = parse_concurrency(raw, 'concurrency', 1)
+      @lock_dir = raw.fetch('lock_dir', DEFAULT_LOCK_DIR)
     end
 
     private
@@ -71,6 +76,15 @@ module ZFSReplicate
       value = hash.fetch(key)
       unless value.is_a?(Integer) && value >= 0
         raise ConfigError, "'#{key}' must be a non-negative integer"
+      end
+      value
+    end
+
+    def parse_concurrency(hash, key, default)
+      return default unless hash.key?(key)
+      value = hash.fetch(key)
+      unless value.is_a?(Integer) && value >= 1
+        raise ConfigError, "'#{key}' must be a positive integer"
       end
       value
     end
