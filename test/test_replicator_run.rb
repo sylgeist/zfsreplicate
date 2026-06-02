@@ -9,13 +9,18 @@ require 'zfsreplicate/replicator'
 require 'zfsreplicate/config'
 
 class RecordingExecutor
-  attr_reader :commands, :pipelines
+  attr_reader :commands, :pipelines, :events
 
-  # responses: array of [Regexp, String | :raise]
-  def initialize(responses = [])
+  # responses: array of [Regexp, String | :raise | Array<String|:raise>]
+  #   - an Array value is consumed one element per matching call; the last
+  #     element sticks once reached.
+  # pipeline_failures: the first N run_pipeline calls raise ExecutorError.
+  def initialize(responses = [], pipeline_failures: 0)
     @responses = responses
+    @pipeline_failures = pipeline_failures
     @commands = []
     @pipelines = []
+    @events = []
   end
 
   def local?
@@ -28,13 +33,21 @@ class RecordingExecutor
 
   def run(cmd)
     @commands << cmd
-    _, value = @responses.find { |rx, _| rx =~ cmd }
+    @events << [:run, cmd]
+    pair = @responses.find { |rx, _| rx =~ cmd }
+    return "" unless pair
+    value = pair[1]
+    value = (value.length > 1 ? value.shift : value.first) if value.is_a?(Array)
     raise ZFSReplicate::ExecutorError, "command failed: #{cmd}" if value == :raise
     value || ""
   end
 
   def run_pipeline(src_cmd, dst_cmd)
     @pipelines << [src_cmd, dst_cmd]
+    @events << [:pipeline, src_cmd]
+    if @pipelines.length <= @pipeline_failures
+      raise ZFSReplicate::ExecutorError, "pipeline failed (simulated)"
+    end
     ""
   end
 end
@@ -43,10 +56,11 @@ def endpoint(dataset)
   ZFSReplicate::EndpointConfig.new(nil, 'root', dataset, 22, nil)
 end
 
-def replication(force: false, keep: 7, recursive: false)
+def replication(force: false, keep: 7, recursive: false,
+                resume: true, max_retries: 3, retry_delay: 5)
   ZFSReplicate::ReplicationConfig.new(
     'job', endpoint('tank/vms'), endpoint('backup/vms'),
-    recursive, keep, 'zfsreplicate', force
+    recursive, keep, 'zfsreplicate', force, resume, max_retries, retry_delay
   )
 end
 
@@ -62,10 +76,12 @@ class TestReplicatorRun < Minitest::Test
     backup/vms@zfsreplicate-20260410-000000
   OUT
 
-  def build(src_resp, dst_resp, cfg)
-    @src = RecordingExecutor.new(src_resp)
+  def build(src_resp, dst_resp, cfg, src_failures: 0)
+    @delays = []
+    @src = RecordingExecutor.new(src_resp, pipeline_failures: src_failures)
     @dst = RecordingExecutor.new(dst_resp)
-    ZFSReplicate::Replicator.new(cfg, src_executor: @src, dst_executor: @dst)
+    ZFSReplicate::Replicator.new(cfg, src_executor: @src, dst_executor: @dst,
+                                 sleeper: ->(s) { @delays << s })
   end
 
   def test_creates_source_snapshot
@@ -89,7 +105,7 @@ class TestReplicatorRun < Minitest::Test
     assert_equal 1, @src.pipelines.length
     send_cmd, recv_cmd = @src.pipelines.first
     assert_match /\Azfs send tank\/vms@zfsreplicate-20260420-000000\z/, send_cmd
-    assert_match /zfs recv -F backup\/vms/, recv_cmd
+    assert_match /zfs recv -F -s backup\/vms/, recv_cmd
   end
 
   def test_incremental_send_when_common_exists
@@ -142,5 +158,47 @@ class TestReplicatorRun < Minitest::Test
     # destination had 2 managed, keep 1 => destroy 1 oldest
     dst_destroys = @dst.commands.grep(/zfs destroy/)
     assert_equal 1, dst_destroys.length
+  end
+
+  def test_retries_then_succeeds_and_switches_to_resume
+    rep = build(
+      [[/zfs list -t snapshot/, SRC_THREE]],
+      [[/zfs list -t snapshot/, ""],
+       [/zfs list -H -o name/, :raise],
+       [/receive_resume_token/, ["-", "1-resumetoken"]]],
+      replication,
+      src_failures: 1
+    )
+    rep.run
+    assert_equal 2, @src.pipelines.length
+    assert_equal 'zfs send -t 1-resumetoken', @src.pipelines[1][0]
+    assert_equal [5], @delays
+  end
+
+  def test_gives_up_after_max_retries
+    rep = build(
+      [[/zfs list -t snapshot/, SRC_THREE]],
+      [[/zfs list -t snapshot/, ""],
+       [/zfs list -H -o name/, :raise],
+       [/receive_resume_token/, "-"]],
+      replication(max_retries: 3),
+      src_failures: 4
+    )
+    assert_raises(ZFSReplicate::ExecutorError) { rep.run }
+    assert_equal 4, @src.pipelines.length
+    assert_equal [5, 10, 20], @delays
+  end
+
+  def test_resume_disabled_is_single_attempt_no_retry
+    rep = build(
+      [[/zfs list -t snapshot/, SRC_THREE]],
+      [[/zfs list -t snapshot/, ""], [/zfs list -H -o name/, :raise]],
+      replication(resume: false),
+      src_failures: 1
+    )
+    assert_raises(ZFSReplicate::ExecutorError) { rep.run }
+    assert_equal 1, @src.pipelines.length
+    assert_equal 'zfs recv -F backup/vms', @src.pipelines[0][1]
+    assert_empty @delays
   end
 end
