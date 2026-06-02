@@ -97,4 +97,15 @@ class TestJobRunner < Minitest::Test
     result = runner.run.first
     assert_in_delta 3.5, result.duration, 0.0001
   end
+
+  def test_skip_path_releases_the_lock
+    lock = FakeLock.new(false)   # cannot acquire -> skip path
+    runner = ZFSReplicate::JobRunner.new(
+      [], concurrency: 1, lock_factory: ->(_n) { lock },
+      execute: ->(_j) {}, clock: -> { 0.0 }
+    )
+    result = runner.send(:run_one, JobStub.new('x'))
+    assert_equal :skipped, result.status
+    assert lock.released, 'expected the lock to be released on the skip path'
+  end
 end

@@ -65,10 +65,9 @@ module ZFSReplicate
       rescue StandardError => e
         ZFSReplicate.logger.error("#{job.name} failed: #{e.message}")
         JobResult.new(job.name, :failed, @clock.call - start, e.message)
-      ensure
-        lock.release
       end
     ensure
+      lock&.release
       Thread.current[:zfsreplicate_job] = nil
     end
   end
