@@ -72,6 +72,13 @@ zfsreplicate -c /etc/zfsreplicate.yml list
 | `max_retries` | no | `3` | Retries after the first attempt (≤ 4 tries total) |
 | `retry_delay` | no | `5` | Base seconds for exponential backoff (5s, 10s, 20s…) |
 
+Top-level keys (siblings of `replications`):
+
+| Field | Required | Default | Description |
+|---|---|---|---|
+| `concurrency` | no | `1` | Max replication jobs to run in parallel |
+| `lock_dir` | no | *(temp dir)* | Directory for per-job lock files (`<lock_dir>/<job>.lock`) |
+
 ### Snapshot naming
 
 Snapshots are named `<dataset>@<prefix>-YYYYMMDD-HHMMSS` in UTC, e.g.:
@@ -96,6 +103,7 @@ Options:
   -c, --config FILE   Config file (default: ~/.config/zfsreplicate/config.yml)
   -v, --verbose       Verbose output
   -n, --dry-run       Print actions without executing
+  -j, --concurrency N Run up to N jobs in parallel (default 1)
   -V, --version       Print version and exit
 ```
 
@@ -165,6 +173,35 @@ Set `resume: false` on a job to restore the old behavior (a single attempt with
 To discard a stuck partial receive and force a fresh send, run
 `zfs recv -A <destination-dataset>` on the destination before the next sync.
 
+## Parallel execution
+
+By default jobs run one at a time. Raise the cap to replicate multiple datasets
+at once — most useful when a fast source fans out to several slower destinations,
+where total time drops toward the slowest single job instead of their sum:
+
+```sh
+zfsreplicate -j 4 sync        # up to 4 jobs at once
+```
+
+The cap can also be set in config (`concurrency: 4`); the `-j` flag overrides it.
+
+Each job takes a per-job lock (`<lock_dir>/<job>.lock`) for the duration of its
+run. If a job is already running in another process (for example, a still-running
+previous cron invocation), it is **skipped** with a warning rather than run twice.
+
+At the end of a run a summary is printed and the exit code reflects the outcome:
+
+```
+Summary:
+  vms-backup   ok        12.3s
+  node-b       FAILED     4.1s   pipeline failed (status 1): ...
+  node-c       skipped       -   already running
+2 ok, 1 failed, 1 skipped
+```
+
+Exit codes: `0` all jobs succeeded (skips are not failures), `1` one or more
+jobs failed, `2` a configuration or usage error (nothing ran).
+
 ## SSH setup
 
 The tool connects with `BatchMode=yes` (no password prompts). Ensure key-based auth is working before running:
@@ -188,7 +225,6 @@ ruby -Ilib -Itest test/run_all.rb
 
 ## Known limitations
 
-- Jobs run sequentially; no parallelism
 - When both endpoints are remote, the stream is relayed through the orchestrating host
 
 ## License

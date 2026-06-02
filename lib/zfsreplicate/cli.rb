@@ -1,8 +1,12 @@
 # frozen_string_literal: true
 # lib/zfsreplicate/cli.rb
 require 'optparse'
+require 'fileutils'
 require_relative 'config'
 require_relative 'replicator'
+require_relative 'job_runner'
+require_relative 'lock'
+require_relative 'report'
 require_relative 'log'
 require_relative 'version'
 
@@ -22,6 +26,7 @@ module ZFSReplicate
         -c, --config FILE   Config file (default: #{DEFAULT_CONFIG})
         -v, --verbose       Verbose output
         -n, --dry-run       Print actions without executing
+        -j, --concurrency N Run up to N jobs in parallel (default 1)
         -V, --version       Print version and exit
 
     USAGE
@@ -33,14 +38,20 @@ module ZFSReplicate
         o.on('-c', '--config FILE') { |f| options[:config] = f }
         o.on('-v', '--verbose')     { options[:verbose] = true }
         o.on('-n', '--dry-run')     { options[:dry_run] = true }
+        o.on('-j', '--concurrency N', Integer) { |n| options[:concurrency] = n }
         o.on('-V', '--version')     { puts "zfsreplicate #{VERSION}"; exit 0 }
       end
 
       begin
         parser.parse!(argv)
-      rescue OptionParser::InvalidOption => e
+      rescue OptionParser::ParseError => e
         warn e.message
-        exit 1
+        exit 2
+      end
+
+      if options[:concurrency] && options[:concurrency] < 1
+        warn 'concurrency must be >= 1'
+        exit 2
       end
 
       ZFSReplicate.log_level = options[:verbose] ? Logger::DEBUG : Logger::INFO
@@ -69,7 +80,18 @@ module ZFSReplicate
       end
     rescue ConfigError => e
       warn "Config error: #{e.message}"
-      exit 1
+      exit 2
+    end
+
+    def self.exit_code_for(results)
+      results.any? { |r| r.status == :failed } ? 1 : 0
+    end
+
+    # Map a job name to a lock filename. Job names must remain distinct after
+    # this sanitization (characters outside [A-Za-z0-9_.-] collapse to '_') or
+    # they will share a lock file and serialize instead of running in parallel.
+    def self.lock_filename(name)
+      name.gsub(/[^A-Za-z0-9_.-]/, '_')
     end
 
     def self.cmd_sync(name, options)
@@ -78,23 +100,34 @@ module ZFSReplicate
 
       if jobs.empty?
         warn name ? "No replication named '#{name}'" : "No replications configured"
-        exit 1
+        exit 2
       end
 
-      jobs.each do |rep|
-        ZFSReplicate.logger.info("Starting replication: #{rep.name}")
-        if options[:dry_run]
+      if options[:dry_run]
+        jobs.each do |rep|
           puts "[dry-run] Would replicate #{rep.source.dataset} \u2192 #{rep.destination.dataset}"
-        else
-          Replicator.new(rep).run
         end
+        return
       end
+
+      concurrency = options[:concurrency] || cfg.concurrency # CLI flag overrides config
+      begin
+        FileUtils.mkdir_p(cfg.lock_dir)
+      rescue SystemCallError => e
+        warn "Cannot create lock directory #{cfg.lock_dir}: #{e.message}"
+        exit 2
+      end
+      lock_factory = lambda do |job_name|
+        Lock.new(File.join(cfg.lock_dir, "#{lock_filename(job_name)}.lock"))
+      end
+
+      results = JobRunner.new(jobs, concurrency: concurrency,
+                                    lock_factory: lock_factory).run
+      Report.summary_lines(results).each { |line| puts line }
+      exit exit_code_for(results)
     rescue ConfigError => e
       warn "Config error: #{e.message}"
-      exit 1
-    rescue ExecutorError => e
-      warn "Replication failed: #{e.message}"
-      exit 1
+      exit 2
     end
   end
 end
