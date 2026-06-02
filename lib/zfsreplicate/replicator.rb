@@ -24,6 +24,18 @@ module ZFSReplicate
       end
     end
 
+    def self.resume_send_command(token:)
+      "zfs send -t #{token}"
+    end
+
+    def self.recv_command(dataset:, fresh:, resumable:)
+      parts = ['zfs recv']
+      parts << '-F' if fresh
+      parts << '-s' if resumable
+      parts << dataset
+      parts.join(' ')
+    end
+
     def self.snapshots_to_prune(snaps, keep:)
       sorted = snaps.sort
       sorted.length > keep ? sorted[0...(sorted.length - keep)] : []
@@ -44,10 +56,12 @@ module ZFSReplicate
 
     # Instance interface for running a full replication job. Executors may be
     # injected (for testing); otherwise they are built from the endpoint config.
-    def initialize(replication_config, src_executor: nil, dst_executor: nil)
+    def initialize(replication_config, src_executor: nil, dst_executor: nil,
+                   sleeper: ->(s) { Kernel.sleep(s) })
       @cfg = replication_config
       @src_executor = src_executor
       @dst_executor = dst_executor
+      @sleeper = sleeper
     end
 
     def run
@@ -63,6 +77,19 @@ module ZFSReplicate
 
       src_ds = Dataset.new(@cfg.source.dataset, executor: src_exec)
       dst_ds = Dataset.new(@cfg.destination.dataset, executor: dst_exec)
+
+      recv_resume = self.class.recv_command(dataset: @cfg.destination.dataset,
+                                            fresh: false, resumable: true)
+
+      if @cfg.resume && dst_ds.resume_token
+        ZFSReplicate.logger.info(
+          "Resuming interrupted transfer to #{@cfg.destination.dataset}"
+        )
+        perform_transfer(
+          src_exec, dst_exec, dst_ds,
+          fresh_send: nil, recv_fresh: nil, recv_resume: recv_resume
+        )
+      end
 
       tag = Snapshot.generate_name(@cfg.source.dataset,
                                    prefix: @cfg.snapshot_prefix).split('@').last
@@ -81,12 +108,15 @@ module ZFSReplicate
         force: @cfg.force
       )
 
-      send_cmd = self.class.send_command(latest: latest, common: common,
-                                         recursive: @cfg.recursive)
-      recv_cmd = "zfs recv -F #{@cfg.destination.dataset}"
+      fresh_send = self.class.send_command(latest: latest, common: common,
+                                           recursive: @cfg.recursive)
+      recv_fresh = self.class.recv_command(dataset: @cfg.destination.dataset,
+                                           fresh: true, resumable: @cfg.resume)
 
       ZFSReplicate.logger.info("Sending #{latest.tag} (#{common ? 'incremental' : 'full'})")
-      src_exec.run_pipeline(send_cmd, remote_recv_cmd(dst_exec, recv_cmd))
+      perform_transfer(src_exec, dst_exec, dst_ds,
+                       fresh_send: fresh_send, recv_fresh: recv_fresh,
+                       recv_resume: recv_resume)
 
       prune_source = self.class.snapshots_to_prune(src_snaps, keep: @cfg.keep_snapshots)
       prune_source.each do |snap|
@@ -105,6 +135,35 @@ module ZFSReplicate
     end
 
     private
+
+    def perform_transfer(src_exec, dst_exec, dst_ds, fresh_send:, recv_fresh:, recv_resume:)
+      attempt = 0
+      loop do
+        token = @cfg.resume ? dst_ds.resume_token : nil
+        if token
+          send_cmd = self.class.resume_send_command(token: token)
+          recv_cmd = recv_resume
+        elsif fresh_send
+          send_cmd = fresh_send
+          recv_cmd = recv_fresh
+        else
+          return
+        end
+
+        begin
+          src_exec.run_pipeline(send_cmd, remote_recv_cmd(dst_exec, recv_cmd))
+          return
+        rescue ExecutorError => e
+          attempt += 1
+          raise if !@cfg.resume || attempt > @cfg.max_retries
+          delay = @cfg.retry_delay * (2**(attempt - 1))
+          ZFSReplicate.logger.warn(
+            "Transfer attempt #{attempt} failed (#{e.message}); retrying in #{delay}s"
+          )
+          @sleeper.call(delay)
+        end
+      end
+    end
 
     def executor_for(endpoint)
       return Executor.local if endpoint.local?

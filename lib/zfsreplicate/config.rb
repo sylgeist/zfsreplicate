@@ -12,7 +12,8 @@ module ZFSReplicate
   end
 
   ReplicationConfig = Struct.new(
-    :name, :source, :destination, :recursive, :keep_snapshots, :snapshot_prefix, :force
+    :name, :source, :destination, :recursive, :keep_snapshots, :snapshot_prefix,
+    :force, :resume, :max_retries, :retry_delay
   )
 
   class Config
@@ -42,7 +43,10 @@ module ZFSReplicate
         r.fetch('recursive', false),
         r.fetch('keep_snapshots', 7),
         r.fetch('snapshot_prefix', 'zfsreplicate'),
-        r.fetch('force', false)
+        r.fetch('force', false),
+        r.fetch('resume', true),
+        non_negative_int(r, 'max_retries', 3),
+        non_negative_int(r, 'retry_delay', 5)
       )
     end
 
@@ -60,6 +64,15 @@ module ZFSReplicate
     def require_key(hash, key, label = key)
       raise ConfigError, "Missing required '#{label}' in replication config" unless hash.key?(key)
       hash.fetch(key)
+    end
+
+    def non_negative_int(hash, key, default)
+      return default unless hash.key?(key)
+      value = hash.fetch(key)
+      unless value.is_a?(Integer) && value >= 0
+        raise ConfigError, "'#{key}' must be a non-negative integer"
+      end
+      value
     end
   end
 end

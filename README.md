@@ -68,6 +68,9 @@ zfsreplicate -c /etc/zfsreplicate.yml list
 | `keep_snapshots` | no | `7` | Number of managed snapshots to retain on each side |
 | `snapshot_prefix` | no | `zfsreplicate` | Prefix for auto-created snapshot names |
 | `force` | no | `false` | Permit a full `zfs recv -F` to a destination that already exists but shares no snapshot (overwrites it) |
+| `resume` | no | `true` | Use `zfs recv -s` and retry/resume interrupted transfers |
+| `max_retries` | no | `3` | Retries after the first attempt (≤ 4 tries total) |
+| `retry_delay` | no | `5` | Base seconds for exponential backoff (5s, 10s, 20s…) |
 
 ### Snapshot naming
 
@@ -144,6 +147,24 @@ If there is no common snapshot and the destination dataset **already exists**, t
 
 When **both** endpoints are remote, the stream is relayed through the host running `zfsreplicate` (source → here → destination) rather than sent host-to-host; run the tool on one of the two nodes to avoid the extra hop.
 
+## Resumable transfers
+
+By default each transfer uses `zfs recv -s`, so an interrupted `zfs send | zfs
+recv` can continue from where it stopped instead of restarting:
+
+- If a transfer fails, it is retried up to `max_retries` times with exponential
+  backoff (`retry_delay`, doubling each time). On a retry the destination's
+  `receive_resume_token` is used to resume rather than resend from scratch.
+- If the whole run still fails, the partially received state is left on the
+  destination; the next `sync` detects the leftover token and continues it
+  before doing anything else.
+
+Set `resume: false` on a job to restore the old behavior (a single attempt with
+`zfs recv -F`, no retries).
+
+To discard a stuck partial receive and force a fresh send, run
+`zfs recv -A <destination-dataset>` on the destination before the next sync.
+
 ## SSH setup
 
 The tool connects with `BatchMode=yes` (no password prompts). Ensure key-based auth is working before running:
@@ -167,7 +188,6 @@ ruby -Ilib -Itest test/run_all.rb
 
 ## Known limitations
 
-- Resume (`zfs send -s` / `zfs recv -s`) is not yet supported
 - Jobs run sequentially; no parallelism
 - When both endpoints are remote, the stream is relayed through the orchestrating host
 

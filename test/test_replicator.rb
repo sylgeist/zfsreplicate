@@ -64,6 +64,29 @@ class TestReplicatorSendCommand < Minitest::Test
   end
 end
 
+class TestReplicatorResumeCommands < Minitest::Test
+  include ZFSReplicate
+
+  def test_resume_send_command
+    assert_equal 'zfs send -t 1-abc', Replicator.resume_send_command(token: '1-abc')
+  end
+
+  def test_recv_command_fresh_resumable
+    assert_equal 'zfs recv -F -s backup/vms',
+                 Replicator.recv_command(dataset: 'backup/vms', fresh: true, resumable: true)
+  end
+
+  def test_recv_command_fresh_not_resumable
+    assert_equal 'zfs recv -F backup/vms',
+                 Replicator.recv_command(dataset: 'backup/vms', fresh: true, resumable: false)
+  end
+
+  def test_recv_command_resume_continuation
+    assert_equal 'zfs recv -s backup/vms',
+                 Replicator.recv_command(dataset: 'backup/vms', fresh: false, resumable: true)
+  end
+end
+
 class TestReplicatorFullSendGuard < Minitest::Test
   include ZFSReplicate
 

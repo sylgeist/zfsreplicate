@@ -22,8 +22,8 @@ Gemfile.lock
 .DS_Store
 **/.DS_Store
 
-# Superpowers planning artifacts (local scratch)
-/docs/superpowers/
+# Superpowers planning artifacts (local scratch); specs/ are tracked
+/docs/superpowers/plans/
 
 # Editor
 *.swp

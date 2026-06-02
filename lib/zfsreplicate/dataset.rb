@@ -19,6 +19,13 @@ module ZFSReplicate
       false
     end
 
+    def resume_token
+      value = @executor.run("zfs get -H -o value receive_resume_token #{@name}").strip
+      value.empty? || value == '-' ? nil : value
+    rescue ExecutorError
+      nil
+    end
+
     def snapshots
       raw = @executor.run("zfs list -t snapshot -H -o name -s creation #{@name}")
       raw.lines.map(&:chomp).reject(&:empty?).map { |l| Snapshot.parse(l) }.sort
