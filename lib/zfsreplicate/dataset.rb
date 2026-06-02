@@ -1,5 +1,7 @@
+# frozen_string_literal: true
 # lib/zfsreplicate/dataset.rb
 require_relative 'snapshot'
+require_relative 'executor'
 
 module ZFSReplicate
   class Dataset
@@ -8,6 +10,13 @@ module ZFSReplicate
     def initialize(name, executor:)
       @name = name
       @executor = executor
+    end
+
+    def exists?
+      @executor.run("zfs list -H -o name #{@name}")
+      true
+    rescue ExecutorError
+      false
     end
 
     def snapshots

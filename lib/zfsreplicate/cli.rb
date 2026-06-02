@@ -1,8 +1,10 @@
+# frozen_string_literal: true
 # lib/zfsreplicate/cli.rb
 require 'optparse'
 require_relative 'config'
 require_relative 'replicator'
 require_relative 'log'
+require_relative 'version'
 
 module ZFSReplicate
   module CLI
@@ -20,6 +22,7 @@ module ZFSReplicate
         -c, --config FILE   Config file (default: #{DEFAULT_CONFIG})
         -v, --verbose       Verbose output
         -n, --dry-run       Print actions without executing
+        -V, --version       Print version and exit
 
     USAGE
 
@@ -30,6 +33,7 @@ module ZFSReplicate
         o.on('-c', '--config FILE') { |f| options[:config] = f }
         o.on('-v', '--verbose')     { options[:verbose] = true }
         o.on('-n', '--dry-run')     { options[:dry_run] = true }
+        o.on('-V', '--version')     { puts "zfsreplicate #{VERSION}"; exit 0 }
       end
 
       begin

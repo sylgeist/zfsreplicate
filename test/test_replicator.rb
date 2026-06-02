@@ -64,6 +64,36 @@ class TestReplicatorSendCommand < Minitest::Test
   end
 end
 
+class TestReplicatorFullSendGuard < Minitest::Test
+  include ZFSReplicate
+
+  def test_allows_incremental_regardless_of_destination
+    common = make_snap('tank/vms', 'zfsreplicate-20260410-000000')
+    # Should not raise even though destination exists.
+    Replicator.guard_full_send!(destination: 'backup/vms', common: common,
+                                destination_exists: true, force: false)
+  end
+
+  def test_allows_full_send_to_fresh_destination
+    Replicator.guard_full_send!(destination: 'backup/vms', common: nil,
+                                destination_exists: false, force: false)
+  end
+
+  def test_rejects_full_send_to_existing_destination
+    err = assert_raises(ExecutorError) do
+      Replicator.guard_full_send!(destination: 'backup/vms', common: nil,
+                                  destination_exists: true, force: false)
+    end
+    assert_match /backup\/vms/, err.message
+    assert_match /force/, err.message
+  end
+
+  def test_force_overrides_existing_destination
+    Replicator.guard_full_send!(destination: 'backup/vms', common: nil,
+                                destination_exists: true, force: true)
+  end
+end
+
 class TestReplicatorPruning < Minitest::Test
   include ZFSReplicate
 

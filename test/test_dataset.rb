@@ -2,6 +2,7 @@
 require 'test_helper'
 require 'zfsreplicate/snapshot'
 require 'zfsreplicate/dataset'
+require 'zfsreplicate/executor'
 
 ZFS_LIST_OUTPUT = <<~OUTPUT
   tank/vms@zfsreplicate-20260401-000000
@@ -21,6 +22,12 @@ class MockExecutor
   def run(cmd)
     @last_cmd = cmd
     @response
+  end
+end
+
+class RaisingExecutor
+  def run(cmd)
+    raise ZFSReplicate::ExecutorError, "dataset does not exist: #{cmd}"
   end
 end
 
@@ -60,5 +67,18 @@ class TestDataset < Minitest::Test
     exec = MockExecutor.new('')
     ds = ZFSReplicate::Dataset.new('tank/vms', executor: exec)
     assert_empty ds.snapshots
+  end
+
+  def test_exists_true_when_list_succeeds
+    exec = MockExecutor.new("tank/vms\n")
+    ds = ZFSReplicate::Dataset.new('tank/vms', executor: exec)
+    assert ds.exists?
+    assert_match /zfs list -H -o name tank\/vms/, exec.last_cmd
+  end
+
+  def test_exists_false_when_list_raises
+    exec = RaisingExecutor.new
+    ds = ZFSReplicate::Dataset.new('tank/missing', executor: exec)
+    refute ds.exists?
   end
 end

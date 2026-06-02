@@ -28,6 +28,22 @@ class TestLocalExecutor < Minitest::Test
     out = @exec.run('echo $((2+2))')
     assert_equal "4\n", out
   end
+
+  def test_pipeline_raises_when_source_side_fails
+    # The left (send) side fails; the right (recv) side would otherwise succeed.
+    err = assert_raises(ZFSReplicate::ExecutorError) do
+      @exec.run_pipeline('echo boom >&2; false', 'cat')
+    end
+    assert_match /pipeline failed/, err.message
+    assert_match /boom/, err.message
+  end
+
+  def test_pipeline_raises_when_dest_side_fails
+    err = assert_raises(ZFSReplicate::ExecutorError) do
+      @exec.run_pipeline('echo payload', 'false')
+    end
+    assert_match /pipeline failed/, err.message
+  end
 end
 
 class TestRemoteExecutor < Minitest::Test
@@ -40,5 +56,15 @@ class TestRemoteExecutor < Minitest::Test
   def test_ssh_prefix_includes_batch_mode
     exec = ZFSReplicate::Executor.remote(host: '10.0.0.1', user: 'root')
     assert_includes exec.ssh_prefix, '-o BatchMode=yes'
+  end
+
+  def test_ssh_prefix_includes_identity_when_given
+    exec = ZFSReplicate::Executor.remote(host: '10.0.0.1', user: 'root', identity: '/root/.ssh/k')
+    assert_includes exec.ssh_prefix, '-i /root/.ssh/k'
+  end
+
+  def test_ssh_prefix_omits_identity_when_absent
+    exec = ZFSReplicate::Executor.remote(host: '10.0.0.1', user: 'root')
+    refute_includes exec.ssh_prefix, '-i '
   end
 end

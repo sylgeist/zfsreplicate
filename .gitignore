@@ -22,6 +22,9 @@ Gemfile.lock
 .DS_Store
 **/.DS_Store
 
+# Superpowers planning artifacts (local scratch)
+/docs/superpowers/
+
 # Editor
 *.swp
 *.swo

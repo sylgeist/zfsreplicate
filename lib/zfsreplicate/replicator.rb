@@ -1,3 +1,4 @@
+# frozen_string_literal: true
 # lib/zfsreplicate/replicator.rb
 require 'set'
 require 'shellwords'
@@ -28,14 +29,37 @@ module ZFSReplicate
       sorted.length > keep ? sorted[0...(sorted.length - keep)] : []
     end
 
-    # Instance interface for running a full replication job.
-    def initialize(replication_config)
+    # Guard against a destructive full send. A full `zfs send | zfs recv -F`
+    # overwrites the destination, so refuse it when there is no common snapshot
+    # AND the destination already exists — unless the user opts in with force.
+    def self.guard_full_send!(destination:, common:, destination_exists:, force:)
+      return if common              # incremental — safe
+      return if force               # explicit override
+      return unless destination_exists # fresh target — safe to create
+      raise ExecutorError,
+            "Destination #{destination} already exists but shares no snapshot " \
+            "with the source; refusing full send with -F (would overwrite it). " \
+            "Destroy the destination and re-run, or set force: true."
+    end
+
+    # Instance interface for running a full replication job. Executors may be
+    # injected (for testing); otherwise they are built from the endpoint config.
+    def initialize(replication_config, src_executor: nil, dst_executor: nil)
       @cfg = replication_config
+      @src_executor = src_executor
+      @dst_executor = dst_executor
     end
 
     def run
-      src_exec = executor_for(@cfg.source)
-      dst_exec = executor_for(@cfg.destination)
+      src_exec = @src_executor || executor_for(@cfg.source)
+      dst_exec = @dst_executor || executor_for(@cfg.destination)
+
+      unless @cfg.source.local? || @cfg.destination.local?
+        ZFSReplicate.logger.info(
+          "Both endpoints are remote; the stream is relayed through this host " \
+          "(source -> here -> destination)"
+        )
+      end
 
       src_ds = Dataset.new(@cfg.source.dataset, executor: src_exec)
       dst_ds = Dataset.new(@cfg.destination.dataset, executor: dst_exec)
@@ -50,9 +74,12 @@ module ZFSReplicate
       latest    = src_snaps.max
       common    = self.class.common_snapshot(src_snaps, dst_snaps)
 
-      if common.nil? && !dst_snaps.empty?
-        raise "No common snapshot between source and destination — manual intervention required"
-      end
+      self.class.guard_full_send!(
+        destination: @cfg.destination.dataset,
+        common: common,
+        destination_exists: common.nil? && dst_ds.exists?,
+        force: @cfg.force
+      )
 
       send_cmd = self.class.send_command(latest: latest, common: common,
                                          recursive: @cfg.recursive)
@@ -80,9 +107,9 @@ module ZFSReplicate
     private
 
     def executor_for(endpoint)
-      endpoint.local? ? Executor.local : Executor.remote(host: endpoint.host,
-                                                          user: endpoint.user,
-                                                          port: endpoint.port)
+      return Executor.local if endpoint.local?
+      Executor.remote(host: endpoint.host, user: endpoint.user,
+                      port: endpoint.port, identity: endpoint.identity)
     end
 
     def remote_recv_cmd(dst_exec, recv_cmd)
