@@ -7,7 +7,11 @@ module ZFSReplicate
     @logger ||= begin
       l = Logger.new($stderr)
       l.progname = 'zfsreplicate'
-      l.formatter = ->(sev, _t, prog, msg) { "[#{sev}] #{prog}: #{msg}\n" }
+      l.formatter = lambda do |sev, _t, prog, msg|
+        tag = Thread.current[:zfsreplicate_job]
+        prefix = tag ? "#{prog}[#{tag}]" : prog
+        "[#{sev}] #{prefix}: #{msg}\n"
+      end
       l
     end
   end
