@@ -4,7 +4,7 @@ A Ruby CLI for replicating ZFS datasets between nodes over SSH. No gems required
 
 ## Requirements
 
-- Ruby >= 3.0
+- Ruby >= 4.0
 - FreeBSD (or any OS with `zfs(8)` in PATH)
 - `ssh(1)` with key-based auth configured between nodes
 
