@@ -72,6 +72,15 @@ zfsreplicate -c /etc/zfsreplicate.yml list
 | `max_retries` | no | `3` | Retries after the first attempt (≤ 4 tries total) |
 | `retry_delay` | no | `5` | Base seconds for exponential backoff (5s, 10s, 20s…) |
 
+### Run-level settings
+
+These top-level keys sit alongside `replications:`:
+
+| Key | Default | Description |
+|---|---|---|
+| `concurrency` | `1` | Max replication jobs to run in parallel |
+| `lock_dir` | `/var/run/zfsreplicate` | Directory holding per-job `.lock` files |
+
 ### Snapshot naming
 
 Snapshots are named `<dataset>@<prefix>-YYYYMMDD-HHMMSS` in UTC, e.g.:
@@ -94,6 +103,8 @@ Commands:
 
 Options:
   -c, --config FILE   Config file (default: ~/.config/zfsreplicate/config.yml)
+  -j, --concurrency N Run up to N jobs in parallel (default 1)
+      --lock-dir DIR  Directory for per-job lock files (default /var/run/zfsreplicate)
   -v, --verbose       Verbose output
   -n, --dry-run       Print actions without executing
   -V, --version       Print version and exit
@@ -180,6 +191,17 @@ ssh -o BatchMode=yes root@192.168.1.10 echo ok
 0 * * * * root /usr/local/bin/zfsreplicate sync >> /var/log/zfsreplicate.log 2>&1
 ```
 
+## Concurrency and locking
+
+Run multiple jobs at once with `-j`/`--concurrency` (or the `concurrency:`
+config key); the default is `1` (sequential). Each job takes a non-blocking
+lock at `<lock_dir>/<name>.lock`. If a job's lock is already held — e.g. a slow
+run is still going when cron fires the next one — that job is skipped (logged
+`already running, skipping`) rather than run twice.
+
+Exit codes: `0` all jobs succeeded (or were skipped), `1` one or more jobs
+failed, `2` configuration or usage error.
+
 ## Running tests
 
 ```sh
@@ -188,7 +210,6 @@ ruby -Ilib -Itest test/run_all.rb
 
 ## Known limitations
 
-- Jobs run sequentially; no parallelism
 - When both endpoints are remote, the stream is relayed through the orchestrating host
 
 ## License
