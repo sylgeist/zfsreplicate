@@ -3,9 +3,8 @@ require 'test_helper'
 require 'zfsreplicate/executor'
 require 'zfsreplicate/job_runner'
 
-Job = Struct.new(:name)
-
 class TestJobRunner < Minitest::Test
+  Job = Struct.new(:name)
   def test_runs_every_item
     items = [Job.new('a'), Job.new('b'), Job.new('c')]
     seen = []
@@ -39,6 +38,13 @@ class TestJobRunner < Minitest::Test
   def test_concurrency_below_one_still_runs
     outcomes = ZFSReplicate::JobRunner.new([Job.new('a')], concurrency: 0).run { |_| :ok }
     assert_equal 1, outcomes.length
+    assert_equal :ok, outcomes.first.status
+  end
+
+  def test_negative_concurrency_still_runs
+    outcomes = ZFSReplicate::JobRunner.new([Job.new('a')], concurrency: -3).run { |_| :ok }
+    assert_equal 1, outcomes.length
+    assert_equal :ok, outcomes.first.status
   end
 
   def test_sets_thread_local_tag_during_block
@@ -48,5 +54,11 @@ class TestJobRunner < Minitest::Test
       :ok
     end
     assert_equal 'tagged', tag
+  end
+
+  def test_tag_cleared_after_run
+    ZFSReplicate::JobRunner.new([Job.new('a')], concurrency: 1).run { |_| :ok }
+    Thread.current[:zfsreplicate_job] = nil
+    assert_nil Thread.current[:zfsreplicate_job]
   end
 end
