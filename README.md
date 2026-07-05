@@ -104,6 +104,7 @@ Options:
   -v, --verbose       Verbose output
   -n, --dry-run       Print actions without executing
   -j, --concurrency N Run up to N jobs in parallel (default 1)
+      --lock-dir DIR  Directory for per-job lock files (overrides config lock_dir)
   -V, --version       Print version and exit
 ```
 
