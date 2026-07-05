@@ -27,6 +27,7 @@ module ZFSReplicate
         -v, --verbose       Verbose output
         -n, --dry-run       Print actions without executing
         -j, --concurrency N Run up to N jobs in parallel (default 1)
+            --lock-dir DIR  Directory for per-job lock files (overrides config)
         -V, --version       Print version and exit
 
     USAGE
@@ -39,6 +40,7 @@ module ZFSReplicate
         o.on('-v', '--verbose')     { options[:verbose] = true }
         o.on('-n', '--dry-run')     { options[:dry_run] = true }
         o.on('-j', '--concurrency N', Integer) { |n| options[:concurrency] = n }
+        o.on('--lock-dir DIR')      { |d| options[:lock_dir] = d }
         o.on('-V', '--version')     { puts "zfsreplicate #{VERSION}"; exit 0 }
       end
 
@@ -60,14 +62,15 @@ module ZFSReplicate
       case cmd
       when 'help', '--help', '-h', nil
         puts USAGE
-        exit(cmd ? 0 : 1)
+        # An explicit `help` is success; no command at all is a usage error.
+        exit(cmd ? 0 : 2)
       when 'list'
         cmd_list(options)
       when 'sync'
         cmd_sync(argv.first, options)
       else
         warn "Unknown command: #{cmd}\n\n#{USAGE}"
-        exit 1
+        exit 2
       end
     end
 
@@ -111,14 +114,15 @@ module ZFSReplicate
       end
 
       concurrency = options[:concurrency] || cfg.concurrency # CLI flag overrides config
+      lock_dir = options[:lock_dir] || cfg.lock_dir           # CLI flag overrides config
       begin
-        FileUtils.mkdir_p(cfg.lock_dir)
+        FileUtils.mkdir_p(lock_dir)
       rescue SystemCallError => e
-        warn "Cannot create lock directory #{cfg.lock_dir}: #{e.message}"
+        warn "Cannot create lock directory #{lock_dir}: #{e.message}"
         exit 2
       end
       lock_factory = lambda do |job_name|
-        Lock.new(File.join(cfg.lock_dir, "#{lock_filename(job_name)}.lock"))
+        Lock.new(File.join(lock_dir, "#{lock_filename(job_name)}.lock"))
       end
 
       results = JobRunner.new(jobs, concurrency: concurrency,
