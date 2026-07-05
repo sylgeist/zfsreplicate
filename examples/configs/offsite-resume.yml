@@ -1,0 +1,23 @@
+# offsite-resume.yml
+#
+# Tuned for an unreliable / slow WAN link where transfers may be interrupted.
+# Resume is on by default, but here retries and backoff are widened so a large
+# initial send can survive several drops without restarting from scratch.
+#
+# Run with:  zfsreplicate -c examples/configs/offsite-resume.yml sync
+# See:       examples/guides/02-offsite-over-flaky-link.md
+
+replications:
+  - name: offsite-archive
+    source:
+      dataset: tank/archive
+    destination:
+      host: offsite.example.com
+      user: zfsrepl
+      port: 2222
+      dataset: pool/archive
+      identity: /root/.ssh/offsite_key
+    keep_snapshots: 60
+    resume: true              # use `zfs recv -s`; resume via receive_resume_token (default)
+    max_retries: 6            # up to 7 attempts total per transfer
+    retry_delay: 10           # exponential backoff base: 10s, 20s, 40s, 80s ...

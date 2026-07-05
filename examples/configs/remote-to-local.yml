@@ -1,0 +1,18 @@
+# remote-to-local.yml
+#
+# Pull a dataset FROM a remote host down to local storage. zfsreplicate still
+# runs on this (the destination) machine; only the source is remote.
+#
+# Run with:  zfsreplicate -c examples/configs/remote-to-local.yml sync
+
+replications:
+  - name: db-pull
+    source:
+      host: 192.168.1.10
+      user: root
+      dataset: tank/postgres
+      identity: /root/.ssh/replicate_key
+    destination:
+      # No `host:` key -> pull into a local dataset.
+      dataset: backup/postgres
+    keep_snapshots: 30

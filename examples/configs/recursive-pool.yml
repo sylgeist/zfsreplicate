@@ -1,0 +1,19 @@
+# recursive-pool.yml
+#
+# Replicate a whole dataset subtree (the dataset and all of its children) in a
+# single stream. `recursive: true` passes -R to `zfs send`, so child datasets,
+# their properties, and snapshots are included.
+#
+# Run with:  zfsreplicate -c examples/configs/recursive-pool.yml sync
+# See:       examples/guides/03-whole-pool-mirror.md
+
+replications:
+  - name: pool-mirror
+    source:
+      dataset: tank            # tank and everything under it (tank/vms, tank/db, ...)
+    destination:
+      host: 192.168.1.20
+      user: root
+      dataset: backup/tank
+    recursive: true
+    keep_snapshots: 7

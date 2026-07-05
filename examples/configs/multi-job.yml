@@ -1,0 +1,39 @@
+# multi-job.yml
+#
+# Several independent replications in one config. `zfsreplicate sync` (no name)
+# runs them all in sequence; `zfsreplicate sync <name>` runs just one.
+#
+# Run all:   zfsreplicate -c examples/configs/multi-job.yml sync
+# Run one:   zfsreplicate -c examples/configs/multi-job.yml sync db-offsite
+# List:      zfsreplicate -c examples/configs/multi-job.yml list
+
+replications:
+  - name: vms-local-nas
+    source:
+      dataset: tank/vms
+    destination:
+      host: nas.lan
+      user: root
+      dataset: backup/vms
+    keep_snapshots: 14
+
+  - name: db-offsite
+    source:
+      dataset: tank/postgres
+    destination:
+      host: offsite.example.com
+      user: zfsrepl
+      port: 2222              # non-default SSH port
+      dataset: pool/db
+      identity: /root/.ssh/offsite_key
+    keep_snapshots: 30
+
+  - name: home-mirror
+    source:
+      dataset: tank/home
+    destination:
+      host: nas.lan
+      user: root
+      dataset: backup/home
+    recursive: true
+    keep_snapshots: 7

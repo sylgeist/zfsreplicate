@@ -118,6 +118,9 @@ zfsreplicate sync
 zfsreplicate sync vms-backup
 ```
 
+See [`examples/`](examples/) for complete, copy-paste-ready configs and
+walkthroughs (local→remote, offsite-with-resume, recursive pool mirror, and more).
+
 ### Dry run
 
 ```sh
