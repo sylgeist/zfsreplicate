@@ -75,7 +75,7 @@ module ZFSReplicate
       end
     rescue ConfigError => e
       warn "Config error: #{e.message}"
-      exit 1
+      exit 2
     end
 
     def self.cmd_sync(name, options)

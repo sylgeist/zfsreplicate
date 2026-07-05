@@ -31,6 +31,7 @@ class TestCLIParsing < Minitest::Test
 end
 
 require 'tmpdir'
+require 'fileutils'
 
 class TestCLISync < Minitest::Test
   # Minimal config with one local->local job (no real ZFS is invoked because
@@ -75,6 +76,26 @@ class TestCLISync < Minitest::Test
         ZFSReplicate::CLI.run(['-c', path, '--lock-dir', lock_dir, 'sync'])
       end
       assert_equal 1, ex.status
+    end
+  ensure
+    load 'zfsreplicate/replicator.rb'
+  end
+
+  def test_skipped_lock_held_job_exits_zero
+    with_config do |path, lock_dir|
+      ZFSReplicate::Replicator.define_method(:run) { nil } # all jobs succeed if reached
+      FileUtils.mkdir_p(lock_dir)
+      lock_fd = File.open(File.join(lock_dir, 'job-a.lock'), File::CREAT | File::RDWR, 0o644)
+      lock_fd.flock(File::LOCK_EX | File::LOCK_NB)
+      begin
+        ex = assert_raises(SystemExit) do
+          ZFSReplicate::CLI.run(['-c', path, '--lock-dir', lock_dir, 'sync'])
+        end
+        assert_equal 0, ex.status
+      ensure
+        lock_fd.flock(File::LOCK_UN)
+        lock_fd.close
+      end
     end
   ensure
     load 'zfsreplicate/replicator.rb'
