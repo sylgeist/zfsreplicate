@@ -56,9 +56,4 @@ class TestJobRunner < Minitest::Test
     assert_equal 'tagged', tag
   end
 
-  def test_tag_cleared_after_run
-    ZFSReplicate::JobRunner.new([Job.new('a')], concurrency: 1).run { |_| :ok }
-    Thread.current[:zfsreplicate_job] = nil
-    assert_nil Thread.current[:zfsreplicate_job]
-  end
 end

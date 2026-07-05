@@ -9,17 +9,17 @@ module ZFSReplicate
 
     def self.acquire(name, dir:)
       FileUtils.mkdir_p(dir)
-      file = File.open(File.join(dir, "#{name}.lock"), File::CREAT | File::RDWR, 0o644)
-      if file.flock(File::LOCK_EX | File::LOCK_NB)
-        begin
-          yield
-        ensure
-          file.flock(File::LOCK_UN)
-          file.close
+      File.open(File.join(dir, "#{name}.lock"), File::CREAT | File::RDWR, 0o644) do |file|
+        # flock returns 0 (truthy) on acquire, false when already held (LOCK_NB)
+        if file.flock(File::LOCK_EX | File::LOCK_NB)
+          begin
+            return yield
+          ensure
+            file.flock(File::LOCK_UN)
+          end
+        else
+          return SKIPPED
         end
-      else
-        file.close
-        SKIPPED
       end
     end
   end

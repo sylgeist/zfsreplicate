@@ -45,4 +45,15 @@ class TestLock < Minitest::Test
       assert_equal :second, result
     end
   end
+
+  def test_uncreatable_dir_raises
+    Dir.mktmpdir do |base|
+      blocker = File.join(base, 'not-a-dir')
+      File.write(blocker, 'x')                 # a file, not a dir
+      bad_dir = File.join(blocker, 'locks')    # can't mkdir under a file
+      assert_raises(SystemCallError) do
+        ZFSReplicate::Lock.acquire('job-a', dir: bad_dir) { :nope }
+      end
+    end
+  end
 end

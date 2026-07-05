@@ -13,6 +13,9 @@ module ZFSReplicate
     end
   end
 
+  # NOTE: @logger ||= is not thread-safe. The main thread must call logger (via
+  # log_level=) before any JobRunner worker thread runs, so the instance is
+  # always created on the main thread and subsequent reads are just reads.
   def self.logger
     @logger ||= begin
       l = Logger.new($stderr)

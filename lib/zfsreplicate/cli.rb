@@ -44,9 +44,9 @@ module ZFSReplicate
 
       begin
         parser.parse!(argv)
-      rescue OptionParser::InvalidOption => e
+      rescue OptionParser::ParseError => e
         warn e.message
-        exit 1
+        exit 2
       end
 
       ZFSReplicate.log_level = options[:verbose] ? Logger::DEBUG : Logger::INFO
@@ -55,14 +55,14 @@ module ZFSReplicate
       case cmd
       when 'help', '--help', '-h', nil
         puts USAGE
-        exit(cmd ? 0 : 1)
+        exit(cmd ? 0 : 2)
       when 'list'
         cmd_list(options)
       when 'sync'
         cmd_sync(argv.first, options)
       else
         warn "Unknown command: #{cmd}\n\n#{USAGE}"
-        exit 1
+        exit 2
       end
     end
 
