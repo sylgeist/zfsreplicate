@@ -201,4 +201,16 @@ class TestConfig < Minitest::Test
     assert_equal '/var/lock/zr', ZFSReplicate::Config.load(f.path).lock_dir
     f.close
   end
+
+  def test_compressed_send_defaults_true
+    f = write_config(VALID_CONFIG)
+    assert_equal true, ZFSReplicate::Config.load(f.path).replications.first.compressed_send
+    f.close
+  end
+
+  def test_compressed_send_can_be_disabled
+    f = write_config(VALID_CONFIG + "    compressed_send: false\n")
+    assert_equal false, ZFSReplicate::Config.load(f.path).replications.first.compressed_send
+    f.close
+  end
 end

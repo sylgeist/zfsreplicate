@@ -43,14 +43,14 @@ class TestReplicatorSendCommand < Minitest::Test
 
   def test_full_send_command
     latest = make_snap('tank/vms', 'zfsreplicate-20260420-000000')
-    cmd = Replicator.send_command(latest: latest, common: nil, recursive: false)
+    cmd = Replicator.send_command(latest: latest, common: nil, recursive: false, compressed: false)
     assert_equal 'zfs send tank/vms@zfsreplicate-20260420-000000', cmd
   end
 
   def test_incremental_send_command
     common = make_snap('tank/vms', 'zfsreplicate-20260410-000000')
     latest = make_snap('tank/vms', 'zfsreplicate-20260420-000000')
-    cmd = Replicator.send_command(latest: latest, common: common, recursive: false)
+    cmd = Replicator.send_command(latest: latest, common: common, recursive: false, compressed: false)
     assert_equal(
       'zfs send -I tank/vms@zfsreplicate-20260410-000000 tank/vms@zfsreplicate-20260420-000000',
       cmd
@@ -59,8 +59,21 @@ class TestReplicatorSendCommand < Minitest::Test
 
   def test_recursive_flag
     latest = make_snap('tank/vms', 'zfsreplicate-20260420-000000')
-    cmd = Replicator.send_command(latest: latest, common: nil, recursive: true)
+    cmd = Replicator.send_command(latest: latest, common: nil, recursive: true, compressed: false)
     assert_includes cmd, 'zfs send -R'
+  end
+
+  def test_compressed_full_send_adds_c
+    latest = make_snap('tank/vms', 'zfsreplicate-20260420-000000')
+    cmd = Replicator.send_command(latest: latest, common: nil, recursive: false, compressed: true)
+    assert_equal 'zfs send -c tank/vms@zfsreplicate-20260420-000000', cmd
+  end
+
+  def test_compressed_incremental_send_adds_c
+    common = make_snap('tank/vms', 'zfsreplicate-20260410-000000')
+    latest = make_snap('tank/vms', 'zfsreplicate-20260420-000000')
+    cmd = Replicator.send_command(latest: latest, common: common, recursive: false, compressed: true)
+    assert_includes cmd, 'zfs send -c -I '
   end
 end
 

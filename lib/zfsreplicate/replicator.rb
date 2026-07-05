@@ -15,8 +15,10 @@ module ZFSReplicate
       src_snaps.select { |s| dst_tags.include?(s.tag) }.max
     end
 
-    def self.send_command(latest:, common:, recursive:)
-      flags = recursive ? ' -R' : ''
+    def self.send_command(latest:, common:, recursive:, compressed:)
+      flags = +''
+      flags << ' -R' if recursive
+      flags << ' -c' if compressed
       if common
         "zfs send#{flags} -I #{common.dataset}@#{common.tag} #{latest.dataset}@#{latest.tag}"
       else
@@ -109,7 +111,8 @@ module ZFSReplicate
       )
 
       fresh_send = self.class.send_command(latest: latest, common: common,
-                                           recursive: @cfg.recursive)
+                                           recursive: @cfg.recursive,
+                                           compressed: @cfg.compressed_send)
       recv_fresh = self.class.recv_command(dataset: @cfg.destination.dataset,
                                            fresh: true, resumable: @cfg.resume)
 

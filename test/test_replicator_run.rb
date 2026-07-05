@@ -57,10 +57,12 @@ def endpoint(dataset)
 end
 
 def replication(force: false, keep: 7, recursive: false,
-                resume: true, max_retries: 3, retry_delay: 5)
+                resume: true, max_retries: 3, retry_delay: 5,
+                compressed_send: false)
   ZFSReplicate::ReplicationConfig.new(
     'job', endpoint('tank/vms'), endpoint('backup/vms'),
-    recursive, keep, 'zfsreplicate', force, resume, max_retries, retry_delay
+    recursive, keep, 'zfsreplicate', force, resume, max_retries, retry_delay,
+    compressed_send
   )
 end
 
