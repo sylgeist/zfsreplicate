@@ -42,9 +42,9 @@ class RecordingExecutor
     value || ""
   end
 
-  def run_pipeline(src_cmd, dst_cmd)
-    @pipelines << [src_cmd, dst_cmd]
-    @events << [:pipeline, src_cmd]
+  def run_pipeline(*cmds)
+    @pipelines << cmds
+    @events << [:pipeline, cmds.first]
     if @pipelines.length <= @pipeline_failures
       raise ZFSReplicate::ExecutorError, "pipeline failed (simulated)"
     end
@@ -57,10 +57,12 @@ def endpoint(dataset)
 end
 
 def replication(force: false, keep: 7, recursive: false,
-                resume: true, max_retries: 3, retry_delay: 5)
+                resume: true, max_retries: 3, retry_delay: 5,
+                compressed_send: false, bwlimit: nil)
   ZFSReplicate::ReplicationConfig.new(
     'job', endpoint('tank/vms'), endpoint('backup/vms'),
-    recursive, keep, 'zfsreplicate', force, resume, max_retries, retry_delay
+    recursive, keep, 'zfsreplicate', force, resume, max_retries, retry_delay,
+    compressed_send, bwlimit
   )
 end
 
@@ -220,5 +222,39 @@ class TestReplicatorRun < Minitest::Test
     assert_equal 1, @src.pipelines.length
     assert_equal 'zfs recv -F backup/vms', @src.pipelines[0][1]
     assert_empty @delays
+  end
+
+  def test_compressed_send_flag_reaches_send_stage
+    rep = build(
+      [[/zfs list -t snapshot/, SRC_THREE]],
+      [[/zfs list -t snapshot/, ""], [/zfs list -H -o name/, :raise]],
+      replication(compressed_send: true)
+    )
+    rep.run
+    send_cmd = @src.pipelines.first[0]
+    assert_match(/\Azfs send -c /, send_cmd,
+                 "expected '-c' flag in send stage, got: #{send_cmd.inspect}")
+  end
+
+  def test_bwlimit_inserts_mbuffer_stage_mid_pipeline
+    original = ZFSReplicate::Replicator.method(:ensure_mbuffer!)
+    ZFSReplicate::Replicator.define_singleton_method(:ensure_mbuffer!) { |_executor| nil }
+    begin
+      rep = build(
+        [[/zfs list -t snapshot/, SRC_THREE]],
+        [[/zfs list -t snapshot/, ""], [/zfs list -H -o name/, :raise]],
+        replication(bwlimit: '50m')
+      )
+      rep.run
+      stages = @src.pipelines.first
+      assert_equal 3, stages.length,
+                   "expected 3 pipeline stages (send|mbuffer|recv), got: #{stages.inspect}"
+      assert_equal 'mbuffer -q -R 50m', stages[1],
+                   "expected mbuffer as middle stage, got: #{stages[1].inspect}"
+      assert_match(/\Azfs send /, stages[0])
+      assert_match(/zfs recv /, stages[2])
+    ensure
+      ZFSReplicate::Replicator.define_singleton_method(:ensure_mbuffer!, original)
+    end
   end
 end

@@ -37,20 +37,21 @@ module ZFSReplicate
       stdout
     end
 
-    # Stream src_cmd | dst_cmd, return dst stdout. Used for zfs send | zfs recv.
-    #
-    # Connects the two commands' stdio in-process (Open3.pipeline_r) rather than
-    # via a shell pipe, so a failure on EITHER side is detected — a shell pipe's
-    # exit status reflects only the last command, which would silently swallow a
-    # failed `zfs send`.
-    def run_pipeline(src_cmd, dst_cmd)
-      full_src = local? ? src_cmd : "#{@ssh_prefix} #{Shellwords.escape(src_cmd)}"
-      ZFSReplicate.logger.debug("exec pipeline: #{full_src} | #{dst_cmd}")
+    # Stream N stage commands as a pipeline (stage1 | stage2 | ... | stageN),
+    # return the last stage's stdout. When remote, wraps only the first stage with
+    # the ssh prefix. Detects a failure on ANY stage (not just the last) via
+    # Open3.pipeline_r, avoiding shell pipe masking of intermediate failures.
+    def run_pipeline(*cmds)
+      cmds = cmds.flatten
+      raise ArgumentError, 'run_pipeline requires at least 2 stages' if cmds.length < 2
+
+      first = local? ? cmds.first : "#{@ssh_prefix} #{Shellwords.escape(cmds.first)}"
+      stages = [first, *cmds[1..]]
+      ZFSReplicate.logger.debug("exec pipeline: #{stages.join(' | ')}")
 
       err_r, err_w = IO.pipe
       last_stdout, wait_threads = Open3.pipeline_r(
-        ['/bin/sh', '-c', full_src],
-        ['/bin/sh', '-c', dst_cmd],
+        *stages.map { |c| ['/bin/sh', '-c', c] },
         err: err_w
       )
       err_w.close

@@ -15,8 +15,10 @@ module ZFSReplicate
       src_snaps.select { |s| dst_tags.include?(s.tag) }.max
     end
 
-    def self.send_command(latest:, common:, recursive:)
-      flags = recursive ? ' -R' : ''
+    def self.send_command(latest:, common:, recursive:, compressed:)
+      flags = +''
+      flags << ' -R' if recursive
+      flags << ' -c' if compressed
       if common
         "zfs send#{flags} -I #{common.dataset}@#{common.tag} #{latest.dataset}@#{latest.tag}"
       else
@@ -26,6 +28,24 @@ module ZFSReplicate
 
     def self.resume_send_command(token:)
       "zfs send -t #{token}"
+    end
+
+    # Build the ordered pipeline stages for a transfer. Inserts a local mbuffer
+    # rate-limiter between send and recv when bwlimit is set.
+    def self.transfer_stages(send_cmd:, recv_cmd:, bwlimit:)
+      mbuffer = bwlimit ? "mbuffer -q -R #{bwlimit}" : nil
+      [send_cmd, mbuffer, recv_cmd].compact
+    end
+
+    # Pre-flight: mbuffer must exist on the orchestrating host when bwlimit is
+    # used, or the transfer pipe would fail cryptically.
+    def self.ensure_mbuffer!(executor)
+      executor.run('command -v mbuffer')
+      nil
+    rescue ExecutorError
+      raise ExecutorError,
+            "bwlimit is set but 'mbuffer' is not installed on this host " \
+            "(pkg install mbuffer)"
     end
 
     def self.recv_command(dataset:, fresh:, resumable:)
@@ -67,6 +87,7 @@ module ZFSReplicate
     def run
       src_exec = @src_executor || executor_for(@cfg.source)
       dst_exec = @dst_executor || executor_for(@cfg.destination)
+      self.class.ensure_mbuffer!(Executor.local) if @cfg.bwlimit
 
       unless @cfg.source.local? || @cfg.destination.local?
         ZFSReplicate.logger.info(
@@ -109,7 +130,8 @@ module ZFSReplicate
       )
 
       fresh_send = self.class.send_command(latest: latest, common: common,
-                                           recursive: @cfg.recursive)
+                                           recursive: @cfg.recursive,
+                                           compressed: @cfg.compressed_send)
       recv_fresh = self.class.recv_command(dataset: @cfg.destination.dataset,
                                            fresh: true, resumable: @cfg.resume)
 
@@ -151,7 +173,12 @@ module ZFSReplicate
         end
 
         begin
-          src_exec.run_pipeline(send_cmd, remote_recv_cmd(dst_exec, recv_cmd))
+          stages = self.class.transfer_stages(
+            send_cmd: send_cmd,
+            recv_cmd: remote_recv_cmd(dst_exec, recv_cmd),
+            bwlimit: @cfg.bwlimit
+          )
+          src_exec.run_pipeline(*stages)
           return
         rescue ExecutorError => e
           attempt += 1

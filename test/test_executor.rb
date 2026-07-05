@@ -44,6 +44,18 @@ class TestLocalExecutor < Minitest::Test
     end
     assert_match /pipeline failed/, err.message
   end
+
+  def test_pipeline_three_stages_stream_through_middle
+    out = @exec.run_pipeline('echo payload', 'tr a-z A-Z', 'cat')
+    assert_equal "PAYLOAD\n", out
+  end
+
+  def test_pipeline_raises_when_middle_stage_fails
+    err = assert_raises(ZFSReplicate::ExecutorError) do
+      @exec.run_pipeline('echo payload', 'false', 'cat')
+    end
+    assert_match(/pipeline failed/, err.message)
+  end
 end
 
 class TestRemoteExecutor < Minitest::Test
@@ -66,5 +78,15 @@ class TestRemoteExecutor < Minitest::Test
   def test_ssh_prefix_omits_identity_when_absent
     exec = ZFSReplicate::Executor.remote(host: '10.0.0.1', user: 'root')
     refute_includes exec.ssh_prefix, '-i '
+  end
+
+  def test_pipeline_wraps_only_first_stage_when_remote
+    # 'echo' stands in for the ssh prefix; if the first stage is wrapped, the
+    # pipeline runs `echo SRC | cat | cat` -> "SRC\n". If it were NOT wrapped,
+    # it would try to run the command `SRC` and fail. Later stages must pass
+    # through unwrapped (plain `cat`).
+    exec = ZFSReplicate::Executor.new('echo')
+    out = exec.run_pipeline('SRC', 'cat', 'cat')
+    assert_equal "SRC\n", out
   end
 end
