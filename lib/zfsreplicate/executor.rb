@@ -14,7 +14,9 @@ module ZFSReplicate
     end
 
     def self.remote(host:, user: 'root', port: 22, identity: nil)
-      opts = "-o BatchMode=yes -o StrictHostKeyChecking=accept-new -p #{port}"
+      opts = "-o BatchMode=yes -o StrictHostKeyChecking=accept-new " \
+             "-o ConnectTimeout=10 -o ServerAliveInterval=15 -o ServerAliveCountMax=3 " \
+             "-p #{port}"
       opts += " -i #{identity}" if identity
       new("ssh #{opts} #{user}@#{host}")
     end

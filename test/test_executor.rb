@@ -89,4 +89,11 @@ class TestRemoteExecutor < Minitest::Test
     out = exec.run_pipeline('SRC', 'cat', 'cat')
     assert_equal "SRC\n", out
   end
+
+  def test_ssh_prefix_includes_liveness_options
+    exec = ZFSReplicate::Executor.remote(host: '10.0.0.1', user: 'root')
+    assert_includes exec.ssh_prefix, '-o ConnectTimeout=10'
+    assert_includes exec.ssh_prefix, '-o ServerAliveInterval=15'
+    assert_includes exec.ssh_prefix, '-o ServerAliveCountMax=3'
+  end
 end
