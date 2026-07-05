@@ -146,3 +146,37 @@ class TestReplicatorPruning < Minitest::Test
     assert_empty Replicator.snapshots_to_prune(snaps, keep: 7)
   end
 end
+
+class TestReplicatorTransport < Minitest::Test
+  include ZFSReplicate
+
+  # Executor double: run() succeeds or fails based on `found`.
+  FakeExec = Struct.new(:found) do
+    def run(_cmd)
+      raise ZFSReplicate::ExecutorError, 'command failed' unless found
+      "/usr/local/bin/mbuffer\n"
+    end
+  end
+
+  def test_transfer_stages_without_bwlimit
+    stages = Replicator.transfer_stages(send_cmd: 'zfs send x', recv_cmd: 'zfs recv y', bwlimit: nil)
+    assert_equal ['zfs send x', 'zfs recv y'], stages
+  end
+
+  def test_transfer_stages_with_bwlimit_inserts_mbuffer
+    stages = Replicator.transfer_stages(send_cmd: 'zfs send x', recv_cmd: 'zfs recv y', bwlimit: '50m')
+    assert_equal ['zfs send x', 'mbuffer -q -R 50m', 'zfs recv y'], stages
+  end
+
+  def test_ensure_mbuffer_passes_when_present
+    # Should not raise.
+    assert_nil Replicator.ensure_mbuffer!(FakeExec.new(true))
+  end
+
+  def test_ensure_mbuffer_raises_when_missing
+    err = assert_raises(ZFSReplicate::ExecutorError) do
+      Replicator.ensure_mbuffer!(FakeExec.new(false))
+    end
+    assert_match(/mbuffer/, err.message)
+  end
+end

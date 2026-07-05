@@ -42,9 +42,9 @@ class RecordingExecutor
     value || ""
   end
 
-  def run_pipeline(src_cmd, dst_cmd)
-    @pipelines << [src_cmd, dst_cmd]
-    @events << [:pipeline, src_cmd]
+  def run_pipeline(*cmds)
+    @pipelines << cmds
+    @events << [:pipeline, cmds.first]
     if @pipelines.length <= @pipeline_failures
       raise ZFSReplicate::ExecutorError, "pipeline failed (simulated)"
     end
@@ -58,11 +58,11 @@ end
 
 def replication(force: false, keep: 7, recursive: false,
                 resume: true, max_retries: 3, retry_delay: 5,
-                compressed_send: false)
+                compressed_send: false, bwlimit: nil)
   ZFSReplicate::ReplicationConfig.new(
     'job', endpoint('tank/vms'), endpoint('backup/vms'),
     recursive, keep, 'zfsreplicate', force, resume, max_retries, retry_delay,
-    compressed_send
+    compressed_send, bwlimit
   )
 end
 

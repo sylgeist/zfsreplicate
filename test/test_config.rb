@@ -213,4 +213,16 @@ class TestConfig < Minitest::Test
     assert_equal false, ZFSReplicate::Config.load(f.path).replications.first.compressed_send
     f.close
   end
+
+  def test_bwlimit_defaults_nil
+    f = write_config(VALID_CONFIG)
+    assert_nil ZFSReplicate::Config.load(f.path).replications.first.bwlimit
+    f.close
+  end
+
+  def test_bwlimit_parsed
+    f = write_config(VALID_CONFIG + "    bwlimit: 50m\n")
+    assert_equal '50m', ZFSReplicate::Config.load(f.path).replications.first.bwlimit
+    f.close
+  end
 end
