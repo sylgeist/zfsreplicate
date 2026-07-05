@@ -29,3 +29,63 @@ class TestCLIParsing < Minitest::Test
     assert_equal 0, ex.status
   end
 end
+
+require 'tmpdir'
+
+class TestCLISync < Minitest::Test
+  # Minimal config with one local->local job (no real ZFS is invoked because
+  # we stub Replicator#run).
+  CONFIG = <<~YAML
+    replications:
+      - name: job-a
+        source: { dataset: tank/a }
+        destination: { dataset: backup/a }
+      - name: job-b
+        source: { dataset: tank/b }
+        destination: { dataset: backup/b }
+  YAML
+
+  def with_config
+    Dir.mktmpdir do |dir|
+      path = File.join(dir, 'c.yml')
+      File.write(path, CONFIG)
+      lock_dir = File.join(dir, 'locks')
+      yield path, lock_dir
+    end
+  end
+
+  def test_all_ok_exits_zero
+    with_config do |path, lock_dir|
+      ZFSReplicate::Replicator.define_method(:run) { nil } # succeed
+      ex = assert_raises(SystemExit) do
+        ZFSReplicate::CLI.run(['-c', path, '--lock-dir', lock_dir, 'sync'])
+      end
+      assert_equal 0, ex.status
+    end
+  ensure
+    load 'zfsreplicate/replicator.rb'
+  end
+
+  def test_one_failure_exits_one
+    with_config do |path, lock_dir|
+      ZFSReplicate::Replicator.define_method(:run) do
+        raise ZFSReplicate::ExecutorError, 'boom' if @cfg.name == 'job-b'
+      end
+      ex = assert_raises(SystemExit) do
+        ZFSReplicate::CLI.run(['-c', path, '--lock-dir', lock_dir, 'sync'])
+      end
+      assert_equal 1, ex.status
+    end
+  ensure
+    load 'zfsreplicate/replicator.rb'
+  end
+
+  def test_config_error_exits_two
+    Dir.mktmpdir do |dir|
+      path = File.join(dir, 'bad.yml')
+      File.write(path, "not_replications: {}\n")
+      ex = assert_raises(SystemExit) { ZFSReplicate::CLI.run(['-c', path, 'sync']) }
+      assert_equal 2, ex.status
+    end
+  end
+end

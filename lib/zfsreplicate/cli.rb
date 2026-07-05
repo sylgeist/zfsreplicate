@@ -5,6 +5,8 @@ require_relative 'config'
 require_relative 'replicator'
 require_relative 'log'
 require_relative 'version'
+require_relative 'job_runner'
+require_relative 'lock'
 
 module ZFSReplicate
   module CLI
@@ -23,6 +25,8 @@ module ZFSReplicate
         -v, --verbose       Verbose output
         -n, --dry-run       Print actions without executing
         -V, --version       Print version and exit
+        -j, --concurrency N Run up to N jobs in parallel (default 1)
+            --lock-dir DIR  Directory for per-job lock files (default /var/run/zfsreplicate)
 
     USAGE
 
@@ -34,6 +38,8 @@ module ZFSReplicate
         o.on('-v', '--verbose')     { options[:verbose] = true }
         o.on('-n', '--dry-run')     { options[:dry_run] = true }
         o.on('-V', '--version')     { puts "zfsreplicate #{VERSION}"; exit 0 }
+        o.on('-j', '--concurrency N', Integer) { |n| options[:concurrency] = n }
+        o.on('--lock-dir DIR')                 { |d| options[:lock_dir] = d }
       end
 
       begin
@@ -78,23 +84,34 @@ module ZFSReplicate
 
       if jobs.empty?
         warn name ? "No replication named '#{name}'" : "No replications configured"
-        exit 1
+        exit 2
       end
 
-      jobs.each do |rep|
-        ZFSReplicate.logger.info("Starting replication: #{rep.name}")
-        if options[:dry_run]
+      if options[:dry_run]
+        jobs.each do |rep|
           puts "[dry-run] Would replicate #{rep.source.dataset} \u2192 #{rep.destination.dataset}"
-        else
-          Replicator.new(rep).run
         end
+        exit 0
       end
+
+      concurrency = options[:concurrency] || cfg.concurrency
+      lock_dir    = options[:lock_dir]    || cfg.lock_dir
+
+      outcomes = JobRunner.new(jobs, concurrency: concurrency).run do |rep|
+        result = Lock.acquire(rep.name, dir: lock_dir) do
+          ZFSReplicate.logger.info("Starting replication: #{rep.name}")
+          Replicator.new(rep).run
+          :ok
+        end
+        ZFSReplicate.logger.warn('already running, skipping') if result == Lock::SKIPPED
+        result
+      end
+
+      exit 1 if outcomes.any? { |o| o.status == :failed }
+      exit 0
     rescue ConfigError => e
       warn "Config error: #{e.message}"
-      exit 1
-    rescue ExecutorError => e
-      warn "Replication failed: #{e.message}"
-      exit 1
+      exit 2
     end
   end
 end
