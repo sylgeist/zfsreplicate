@@ -225,4 +225,28 @@ class TestConfig < Minitest::Test
     assert_equal '50m', ZFSReplicate::Config.load(f.path).replications.first.bwlimit
     f.close
   end
+
+  def test_timeout_defaults_nil
+    f = write_config(VALID_CONFIG)
+    assert_nil ZFSReplicate::Config.load(f.path).replications.first.timeout
+    f.close
+  end
+
+  def test_timeout_parsed
+    f = write_config(VALID_CONFIG + "    timeout: 600\n")
+    assert_equal 600, ZFSReplicate::Config.load(f.path).replications.first.timeout
+    f.close
+  end
+
+  def test_timeout_rejects_zero
+    f = write_config(VALID_CONFIG + "    timeout: 0\n")
+    assert_raises(ZFSReplicate::ConfigError) { ZFSReplicate::Config.load(f.path) }
+    f.close
+  end
+
+  def test_timeout_rejects_negative
+    f = write_config(VALID_CONFIG + "    timeout: -5\n")
+    assert_raises(ZFSReplicate::ConfigError) { ZFSReplicate::Config.load(f.path) }
+    f.close
+  end
 end

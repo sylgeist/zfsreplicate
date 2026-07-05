@@ -9,7 +9,7 @@ require 'zfsreplicate/replicator'
 require 'zfsreplicate/config'
 
 class RecordingExecutor
-  attr_reader :commands, :pipelines, :events
+  attr_reader :commands, :pipelines, :pipeline_timeouts, :events
 
   # responses: array of [Regexp, String | :raise | Array<String|:raise>]
   #   - an Array value is consumed one element per matching call; the last
@@ -20,6 +20,7 @@ class RecordingExecutor
     @pipeline_failures = pipeline_failures
     @commands = []
     @pipelines = []
+    @pipeline_timeouts = []
     @events = []
   end
 
@@ -42,8 +43,9 @@ class RecordingExecutor
     value || ""
   end
 
-  def run_pipeline(*cmds)
+  def run_pipeline(*cmds, timeout: nil)
     @pipelines << cmds
+    @pipeline_timeouts << timeout
     @events << [:pipeline, cmds.first]
     if @pipelines.length <= @pipeline_failures
       raise ZFSReplicate::ExecutorError, "pipeline failed (simulated)"
@@ -58,11 +60,11 @@ end
 
 def replication(force: false, keep: 7, recursive: false,
                 resume: true, max_retries: 3, retry_delay: 5,
-                compressed_send: false, bwlimit: nil)
+                compressed_send: false, bwlimit: nil, timeout: nil)
   ZFSReplicate::ReplicationConfig.new(
     'job', endpoint('tank/vms'), endpoint('backup/vms'),
     recursive, keep, 'zfsreplicate', force, resume, max_retries, retry_delay,
-    compressed_send, bwlimit
+    compressed_send, bwlimit, timeout
   )
 end
 
@@ -234,6 +236,16 @@ class TestReplicatorRun < Minitest::Test
     send_cmd = @src.pipelines.first[0]
     assert_match(/\Azfs send -c /, send_cmd,
                  "expected '-c' flag in send stage, got: #{send_cmd.inspect}")
+  end
+
+  def test_timeout_is_passed_to_run_pipeline
+    rep = build(
+      [[/zfs list -t snapshot/, SRC_THREE]],
+      [[/zfs list -t snapshot/, ""], [/zfs list -H -o name/, :raise]],
+      replication(timeout: 600)
+    )
+    rep.run
+    assert_includes @src.pipeline_timeouts, 600
   end
 
   def test_bwlimit_inserts_mbuffer_stage_mid_pipeline
