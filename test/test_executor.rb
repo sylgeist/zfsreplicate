@@ -56,6 +56,27 @@ class TestLocalExecutor < Minitest::Test
     end
     assert_match(/pipeline failed/, err.message)
   end
+
+  def test_pipeline_times_out_and_kills_hung_stage
+    started = Time.now
+    err = assert_raises(ZFSReplicate::ExecutorError) do
+      @exec.run_pipeline('sleep 30', 'cat', timeout: 1)
+    end
+    elapsed = Time.now - started
+    assert_match(/timed out/, err.message)
+    # Must not have waited for the full 30s sleep — proves the stage was killed.
+    assert_operator elapsed, :<, 10, 'timeout should kill the hung stage promptly'
+  end
+
+  def test_pipeline_with_timeout_returns_normally_when_fast
+    out = @exec.run_pipeline('echo hi', 'cat', timeout: 5)
+    assert_equal "hi\n", out
+  end
+
+  def test_pipeline_without_timeout_still_works
+    out = @exec.run_pipeline('echo payload', 'cat')
+    assert_equal "payload\n", out
+  end
 end
 
 class TestRemoteExecutor < Minitest::Test
