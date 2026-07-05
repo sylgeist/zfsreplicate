@@ -37,12 +37,10 @@ module ZFSReplicate
       stdout
     end
 
-    # Stream src_cmd | dst_cmd, return dst stdout. Used for zfs send | zfs recv.
-    #
-    # Connects the two commands' stdio in-process (Open3.pipeline_r) rather than
-    # via a shell pipe, so a failure on EITHER side is detected — a shell pipe's
-    # exit status reflects only the last command, which would silently swallow a
-    # failed `zfs send`.
+    # Stream N stage commands as a pipeline (stage1 | stage2 | ... | stageN),
+    # return the last stage's stdout. When remote, wraps only the first stage with
+    # the ssh prefix. Detects a failure on ANY stage (not just the last) via
+    # Open3.pipeline_r, avoiding shell pipe masking of intermediate failures.
     def run_pipeline(*cmds)
       cmds = cmds.flatten
       raise ArgumentError, 'run_pipeline requires at least 2 stages' if cmds.length < 2

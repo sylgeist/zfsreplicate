@@ -79,4 +79,14 @@ class TestRemoteExecutor < Minitest::Test
     exec = ZFSReplicate::Executor.remote(host: '10.0.0.1', user: 'root')
     refute_includes exec.ssh_prefix, '-i '
   end
+
+  def test_pipeline_wraps_only_first_stage_when_remote
+    # 'echo' stands in for the ssh prefix; if the first stage is wrapped, the
+    # pipeline runs `echo SRC | cat | cat` -> "SRC\n". If it were NOT wrapped,
+    # it would try to run the command `SRC` and fail. Later stages must pass
+    # through unwrapped (plain `cat`).
+    exec = ZFSReplicate::Executor.new('echo')
+    out = exec.run_pipeline('SRC', 'cat', 'cat')
+    assert_equal "SRC\n", out
+  end
 end
