@@ -16,6 +16,16 @@ Every config here uses only currently-supported fields and is checked by
 | Several jobs in one config | [`configs/multi-job.yml`](configs/multi-job.yml) | — |
 | Offsite over a flaky link (resume/retry) | [`configs/offsite-resume.yml`](configs/offsite-resume.yml) | [Offsite over a flaky link](guides/02-offsite-over-flaky-link.md) |
 
+## Real-world example
+
+[`configs/monibeast.yml`](configs/monibeast.yml) is a full production config
+migrated from a `zxfer` + `zfs-auto-snapshot` setup: a 25-job local/remote
+backup hub running 3 jobs in parallel (`concurrency: 3`), mixing recursive
+local mirrors with remote OS/data pulls over non-default SSH ports. Its header
+documents the migration decisions (snapshot ownership, fail-fast on offline
+hosts, `force` on first overwrite). Useful as a reference for scaling beyond a
+handful of jobs.
+
 ## Trying an example
 
 Point `-c` at any config without touching your real one:
