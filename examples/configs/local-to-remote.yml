@@ -1,0 +1,24 @@
+# local-to-remote.yml
+#
+# Push a dataset on THIS host to a remote backup server over SSH.
+# This is the most common setup: zfsreplicate runs on the source machine,
+# creates snapshots locally, and sends them to the destination host.
+#
+# Run with:  zfsreplicate -c examples/configs/local-to-remote.yml sync
+# See:       examples/guides/01-hourly-vm-backup.md
+
+replications:
+  - name: vms-backup
+    source:
+      # No `host:` key -> the source dataset is local to the machine
+      # running zfsreplicate.
+      dataset: tank/vms
+    destination:
+      host: 192.168.1.20
+      user: root
+      dataset: backup/vms
+      # Path to the private key used to reach the destination (ssh -i).
+      # Omit to use ssh's default key resolution.
+      identity: /root/.ssh/replicate_key
+    keep_snapshots: 14        # retain the 14 most recent managed snapshots per side
+    snapshot_prefix: zfsreplicate
