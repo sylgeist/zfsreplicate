@@ -65,7 +65,7 @@ class TestLocalExecutor < Minitest::Test
     elapsed = Time.now - started
     assert_match(/timed out/, err.message)
     # Must not have waited for the full 30s sleep — proves the stage was killed.
-    assert_operator elapsed, :<, 10, 'timeout should kill the hung stage promptly'
+    assert_operator elapsed, :<, 5, 'timeout should kill the hung stage promptly'
   end
 
   def test_pipeline_with_timeout_returns_normally_when_fast
