@@ -249,4 +249,10 @@ class TestConfig < Minitest::Test
     assert_raises(ZFSReplicate::ConfigError) { ZFSReplicate::Config.load(f.path) }
     f.close
   end
+
+  def test_timeout_rejects_non_integer
+    f = write_config(VALID_CONFIG + "    timeout: soon\n")
+    assert_raises(ZFSReplicate::ConfigError) { ZFSReplicate::Config.load(f.path) }
+    f.close
+  end
 end

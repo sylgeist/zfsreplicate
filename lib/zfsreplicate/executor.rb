@@ -111,8 +111,8 @@ module ZFSReplicate
     def signal_groups(pids, sig)
       pids.each do |pid|
         Process.kill(sig, -pid) # negative pid -> the whole process group
-      rescue Errno::ESRCH
-        # process/group already gone
+      rescue Errno::ESRCH, Errno::EPERM
+        # process/group already gone or not signalable
       end
     end
 
