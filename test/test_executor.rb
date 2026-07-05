@@ -44,6 +44,18 @@ class TestLocalExecutor < Minitest::Test
     end
     assert_match /pipeline failed/, err.message
   end
+
+  def test_pipeline_three_stages_stream_through_middle
+    out = @exec.run_pipeline('echo payload', 'tr a-z A-Z', 'cat')
+    assert_equal "PAYLOAD\n", out
+  end
+
+  def test_pipeline_raises_when_middle_stage_fails
+    err = assert_raises(ZFSReplicate::ExecutorError) do
+      @exec.run_pipeline('echo payload', 'false', 'cat')
+    end
+    assert_match(/pipeline failed/, err.message)
+  end
 end
 
 class TestRemoteExecutor < Minitest::Test

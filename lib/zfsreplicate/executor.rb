@@ -43,14 +43,17 @@ module ZFSReplicate
     # via a shell pipe, so a failure on EITHER side is detected — a shell pipe's
     # exit status reflects only the last command, which would silently swallow a
     # failed `zfs send`.
-    def run_pipeline(src_cmd, dst_cmd)
-      full_src = local? ? src_cmd : "#{@ssh_prefix} #{Shellwords.escape(src_cmd)}"
-      ZFSReplicate.logger.debug("exec pipeline: #{full_src} | #{dst_cmd}")
+    def run_pipeline(*cmds)
+      cmds = cmds.flatten
+      raise ArgumentError, 'run_pipeline requires at least 2 stages' if cmds.length < 2
+
+      first = local? ? cmds.first : "#{@ssh_prefix} #{Shellwords.escape(cmds.first)}"
+      stages = [first, *cmds[1..]]
+      ZFSReplicate.logger.debug("exec pipeline: #{stages.join(' | ')}")
 
       err_r, err_w = IO.pipe
       last_stdout, wait_threads = Open3.pipeline_r(
-        ['/bin/sh', '-c', full_src],
-        ['/bin/sh', '-c', dst_cmd],
+        *stages.map { |c| ['/bin/sh', '-c', c] },
         err: err_w
       )
       err_w.close
