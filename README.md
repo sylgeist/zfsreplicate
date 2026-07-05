@@ -71,6 +71,8 @@ zfsreplicate -c /etc/zfsreplicate.yml list
 | `resume` | no | `true` | Use `zfs recv -s` and retry/resume interrupted transfers |
 | `max_retries` | no | `3` | Retries after the first attempt (≤ 4 tries total) |
 | `retry_delay` | no | `5` | Base seconds for exponential backoff (5s, 10s, 20s…) |
+| `compressed_send` | no | `true` | Send blocks in their on-disk compressed form (`zfs send -c`); set `false` if the receiver lacks the compression feature |
+| `bwlimit` | no | *(none)* | Throttle transfer rate via a local `mbuffer -R` stage (e.g. `50m`, `1G`); requires `mbuffer` (`pkg install mbuffer`) on the host running zfsreplicate |
 
 Top-level keys (siblings of `replications`):
 
@@ -78,6 +80,19 @@ Top-level keys (siblings of `replications`):
 |---|---|---|---|
 | `concurrency` | no | `1` | Max replication jobs to run in parallel |
 | `lock_dir` | no | *(temp dir)* | Directory for per-job lock files (`<lock_dir>/<job>.lock`) |
+
+## Transport tuning
+
+Two per-job settings tune how the stream is sent:
+
+- **`compressed_send`** (default `true`) adds `-c` to `zfs send`, so already
+  compressed dataset blocks travel in compressed form instead of being
+  decompressed onto the wire — less bandwidth, no extra CPU. Set it to `false`
+  when the destination pool lacks the relevant compression feature, or when you
+  want the destination to recompress with a different setting.
+- **`bwlimit`** caps throughput by piping the stream through `mbuffer -R` on the
+  host running zfsreplicate (e.g. `bwlimit: 50m`). It requires `mbuffer`
+  (`pkg install mbuffer`); without `bwlimit` set, `mbuffer` is not needed.
 
 ### Snapshot naming
 
