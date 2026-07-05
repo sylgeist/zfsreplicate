@@ -167,4 +167,40 @@ class TestConfig < Minitest::Test
     assert_match(/retry_delay/, err.message)
     f.close
   end
+
+  def test_concurrency_defaults_to_one
+    f = write_config(VALID_CONFIG)
+    assert_equal 1, ZFSReplicate::Config.load(f.path).concurrency
+    f.close
+  end
+
+  def test_concurrency_parsed_from_top_level
+    f = write_config("concurrency: 4\n" + VALID_CONFIG)
+    assert_equal 4, ZFSReplicate::Config.load(f.path).concurrency
+    f.close
+  end
+
+  def test_concurrency_zero_becomes_one
+    f = write_config("concurrency: 0\n" + VALID_CONFIG)
+    assert_equal 1, ZFSReplicate::Config.load(f.path).concurrency
+    f.close
+  end
+
+  def test_concurrency_rejects_negative
+    f = write_config("concurrency: -2\n" + VALID_CONFIG)
+    assert_raises(ZFSReplicate::ConfigError) { ZFSReplicate::Config.load(f.path) }
+    f.close
+  end
+
+  def test_lock_dir_defaults
+    f = write_config(VALID_CONFIG)
+    assert_equal '/var/run/zfsreplicate', ZFSReplicate::Config.load(f.path).lock_dir
+    f.close
+  end
+
+  def test_lock_dir_parsed_from_top_level
+    f = write_config("lock_dir: /tmp/zr-locks\n" + VALID_CONFIG)
+    assert_equal '/tmp/zr-locks', ZFSReplicate::Config.load(f.path).lock_dir
+    f.close
+  end
 end

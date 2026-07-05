@@ -17,7 +17,9 @@ module ZFSReplicate
   )
 
   class Config
-    attr_reader :replications
+    DEFAULT_LOCK_DIR = '/var/run/zfsreplicate'
+
+    attr_reader :replications, :concurrency, :lock_dir
 
     def self.load(path)
       raise ConfigError, "Config file not found: #{path}" unless File.exist?(path)
@@ -30,6 +32,9 @@ module ZFSReplicate
       list = raw.fetch('replications')
       raise ConfigError, "'replications' must be a list" unless list.is_a?(Array)
       @replications = list.map { |r| parse_replication(r) }
+      concurrency = non_negative_int(raw, 'concurrency', 1)
+      @concurrency = concurrency < 1 ? 1 : concurrency
+      @lock_dir = raw.fetch('lock_dir', DEFAULT_LOCK_DIR)
     end
 
     private
