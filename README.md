@@ -73,6 +73,7 @@ zfsreplicate -c /etc/zfsreplicate.yml list
 | `retry_delay` | no | `5` | Base seconds for exponential backoff (5s, 10s, 20s…) |
 | `compressed_send` | no | `true` | Send blocks in their on-disk compressed form (`zfs send -c`); set `false` if the receiver lacks the compression feature |
 | `bwlimit` | no | *(none)* | Throttle transfer rate via a local `mbuffer -R` stage (e.g. `50m`, `1G`); requires `mbuffer` (`pkg install mbuffer`) on the host running zfsreplicate |
+| `timeout` | no | *(none)* | Kill a transfer attempt stuck longer than this many seconds and let retry/backoff take over; set with `max_retries: 0` for fail-fast |
 
 Top-level keys (siblings of `replications`):
 
@@ -93,6 +94,19 @@ Two per-job settings tune how the stream is sent:
 - **`bwlimit`** caps throughput by piping the stream through `mbuffer -R` on the
   host running zfsreplicate (e.g. `bwlimit: 50m`). It requires `mbuffer`
   (`pkg install mbuffer`); without `bwlimit` set, `mbuffer` is not needed.
+
+## Timeouts and liveness
+
+Set a per-job `timeout` (seconds) to bound a single transfer attempt. If a
+`zfs send | zfs recv` hangs longer than `timeout`, its process group is killed
+and the attempt fails; with `resume` on (the default) the transfer is retried
+from where it stopped, up to `max_retries`. Without `timeout`, a stuck transfer
+can block indefinitely. There is no default timeout — set one to match your
+expected worst-case transfer time.
+
+Regardless of `timeout`, SSH connections use `ConnectTimeout=10` and
+`ServerAliveInterval=15`/`ServerAliveCountMax=3`, so metadata commands against an
+unreachable or newly-dead host fail within seconds instead of hanging.
 
 ### Snapshot naming
 

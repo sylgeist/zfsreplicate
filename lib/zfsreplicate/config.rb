@@ -14,7 +14,7 @@ module ZFSReplicate
 
   ReplicationConfig = Struct.new(
     :name, :source, :destination, :recursive, :keep_snapshots, :snapshot_prefix,
-    :force, :resume, :max_retries, :retry_delay, :compressed_send, :bwlimit
+    :force, :resume, :max_retries, :retry_delay, :compressed_send, :bwlimit, :timeout
   )
 
   class Config
@@ -53,7 +53,8 @@ module ZFSReplicate
         non_negative_int(r, 'max_retries', 3),
         non_negative_int(r, 'retry_delay', 5),
         r.fetch('compressed_send', true),
-        r.fetch('bwlimit', nil)
+        r.fetch('bwlimit', nil),
+        positive_int_or_nil(r, 'timeout')
       )
     end
 
@@ -78,6 +79,15 @@ module ZFSReplicate
       value = hash.fetch(key)
       unless value.is_a?(Integer) && value >= 0
         raise ConfigError, "'#{key}' must be a non-negative integer"
+      end
+      value
+    end
+
+    def positive_int_or_nil(hash, key)
+      return nil unless hash.key?(key)
+      value = hash.fetch(key)
+      unless value.is_a?(Integer) && value.positive?
+        raise ConfigError, "'#{key}' must be a positive integer"
       end
       value
     end

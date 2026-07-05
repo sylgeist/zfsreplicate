@@ -178,7 +178,7 @@ module ZFSReplicate
             recv_cmd: remote_recv_cmd(dst_exec, recv_cmd),
             bwlimit: @cfg.bwlimit
           )
-          src_exec.run_pipeline(*stages)
+          src_exec.run_pipeline(*stages, timeout: @cfg.timeout)
           return
         rescue ExecutorError => e
           attempt += 1
