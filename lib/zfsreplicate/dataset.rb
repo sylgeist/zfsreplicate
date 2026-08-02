@@ -39,12 +39,12 @@ module ZFSReplicate
       managed_snapshots(prefix: prefix).max
     end
 
-    def create_snapshot(tag)
-      @executor.run("zfs snapshot #{@name}@#{tag}")
+    def create_snapshot(tag, recursive: false)
+      @executor.run("zfs snapshot#{' -r' if recursive} #{@name}@#{tag}")
     end
 
-    def destroy_snapshot(tag)
-      @executor.run("zfs destroy #{@name}@#{tag}")
+    def destroy_snapshot(tag, recursive: false)
+      @executor.run("zfs destroy#{' -r' if recursive} #{@name}@#{tag}")
     end
   end
 end

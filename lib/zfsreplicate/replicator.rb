@@ -115,7 +115,7 @@ module ZFSReplicate
       tag = Snapshot.generate_name(@cfg.source.dataset,
                                    prefix: @cfg.snapshot_prefix).split('@').last
       ZFSReplicate.logger.info("Creating snapshot #{@cfg.source.dataset}@#{tag}")
-      src_ds.create_snapshot(tag)
+      src_ds.create_snapshot(tag, recursive: @cfg.recursive)
 
       # `zfs list` fails on a dataset that does not exist yet, so a first-ever
       # sync must not list destination snapshots before the send creates it.
@@ -146,7 +146,7 @@ module ZFSReplicate
       prune_source = self.class.snapshots_to_prune(src_snaps, keep: @cfg.keep_snapshots)
       prune_source.each do |snap|
         ZFSReplicate.logger.info("Pruning source #{snap.tag}")
-        src_ds.destroy_snapshot(snap.tag)
+        src_ds.destroy_snapshot(snap.tag, recursive: @cfg.recursive)
       end
 
       prune_dest = self.class.snapshots_to_prune(
@@ -155,7 +155,7 @@ module ZFSReplicate
       )
       prune_dest.each do |snap|
         ZFSReplicate.logger.info("Pruning destination #{snap.tag}")
-        dst_ds.destroy_snapshot(snap.tag)
+        dst_ds.destroy_snapshot(snap.tag, recursive: @cfg.recursive)
       end
     end
 

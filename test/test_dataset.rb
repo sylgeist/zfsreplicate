@@ -82,6 +82,26 @@ class TestDataset < Minitest::Test
     refute ds.exists?
   end
 
+  def test_create_snapshot_plain_by_default
+    @ds.create_snapshot('tag1')
+    assert_equal 'zfs snapshot tank/vms@tag1', @exec.last_cmd
+  end
+
+  def test_create_snapshot_recursive
+    @ds.create_snapshot('tag1', recursive: true)
+    assert_equal 'zfs snapshot -r tank/vms@tag1', @exec.last_cmd
+  end
+
+  def test_destroy_snapshot_plain_by_default
+    @ds.destroy_snapshot('tag1')
+    assert_equal 'zfs destroy tank/vms@tag1', @exec.last_cmd
+  end
+
+  def test_destroy_snapshot_recursive
+    @ds.destroy_snapshot('tag1', recursive: true)
+    assert_equal 'zfs destroy -r tank/vms@tag1', @exec.last_cmd
+  end
+
   def test_resume_token_returns_value
     exec = MockExecutor.new("1-abc123\n")
     ds = ZFSReplicate::Dataset.new('backup/vms', executor: exec)

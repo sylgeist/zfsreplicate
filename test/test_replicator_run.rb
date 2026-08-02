@@ -190,6 +190,28 @@ class TestReplicatorRun < Minitest::Test
     assert_equal 1, dst_destroys.length
   end
 
+  # `zfs send -R` only replicates children whose snapshots exist, so a
+  # recursive job must snapshot (and prune) with -r or the "whole-pool mirror"
+  # silently covers only the parent.
+  def test_recursive_job_snapshots_and_destroys_recursively
+    rep = build(
+      [[/zfs list -t snapshot/, SRC_THREE]],
+      [[/zfs list -t snapshot/, DST_TWO]],
+      replication(recursive: true, keep: 1)
+    )
+    rep.run
+    assert @src.commands.any? { |c| c =~ /\Azfs snapshot -r tank\/vms@zfsreplicate-\d{8}-\d{6}\z/ },
+           "expected recursive snapshot, got #{@src.commands.inspect}"
+    src_destroys = @src.commands.grep(/zfs destroy/)
+    refute_empty src_destroys
+    assert src_destroys.all? { |c| c =~ /\Azfs destroy -r tank\/vms@/ },
+           "expected recursive source destroys, got #{src_destroys.inspect}"
+    dst_destroys = @dst.commands.grep(/zfs destroy/)
+    refute_empty dst_destroys
+    assert dst_destroys.all? { |c| c =~ /\Azfs destroy -r backup\/vms@/ },
+           "expected recursive destination destroys, got #{dst_destroys.inspect}"
+  end
+
   def test_retries_then_succeeds_and_switches_to_resume
     rep = build(
       [[/zfs list -t snapshot/, SRC_THREE]],
