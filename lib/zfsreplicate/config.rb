@@ -46,14 +46,14 @@ module ZFSReplicate
         parse_endpoint(require_key(r, 'source'), 'source'),
         parse_endpoint(require_key(r, 'destination'), 'destination'),
         r.fetch('recursive', false),
-        r.fetch('keep_snapshots', 7),
-        r.fetch('snapshot_prefix', 'zfsreplicate'),
+        positive_int(r, 'keep_snapshots', 7),
+        zfs_name(r.fetch('snapshot_prefix', 'zfsreplicate'), 'snapshot_prefix'),
         r.fetch('force', false),
         r.fetch('resume', true),
         non_negative_int(r, 'max_retries', 3),
         non_negative_int(r, 'retry_delay', 5),
         r.fetch('compressed_send', true),
-        r.fetch('bwlimit', nil),
+        bwlimit_or_nil(r),
         positive_int_or_nil(r, 'timeout')
       )
     end
@@ -63,7 +63,8 @@ module ZFSReplicate
       EndpointConfig.new(
         e['host'],
         e.fetch('user', 'root'),
-        require_key(e, 'dataset', "#{role}.dataset"),
+        zfs_name(require_key(e, 'dataset', "#{role}.dataset"), "#{role}.dataset",
+                 allow_slash: true),
         e.fetch('port', 22),
         e['identity']
       )
@@ -72,6 +73,41 @@ module ZFSReplicate
     def require_key(hash, key, label = key)
       raise ConfigError, "Missing required '#{label}' in replication config" unless hash.key?(key)
       hash.fetch(key)
+    end
+
+    # Config values are interpolated into shell commands, so restrict them to
+    # the ZFS name charset up front: helpful errors instead of cryptic mid-run
+    # shell failures, and no metacharacters can reach the pipeline.
+    def zfs_name(value, label, allow_slash: false)
+      pattern = allow_slash ? %r{\A[A-Za-z0-9][A-Za-z0-9_.:/-]*\z} : /\A[A-Za-z0-9][A-Za-z0-9_.:-]*\z/
+      unless value.is_a?(String) && value.match?(pattern)
+        raise ConfigError,
+              "'#{label}' must contain only letters, digits, and _ . : -" \
+              "#{' /' if allow_slash} (got #{value.inspect})"
+      end
+      value
+    end
+
+    # mbuffer's -R takes <bytes-per-second> with an optional k/M/G suffix.
+    def bwlimit_or_nil(hash)
+      return nil unless hash.key?('bwlimit')
+      value = hash.fetch('bwlimit')
+      value = value.to_s if value.is_a?(Integer) && value.positive?
+      unless value.is_a?(String) && value.match?(/\A\d+[kKmMgG]?\z/)
+        raise ConfigError,
+              "'bwlimit' must be a rate like 50m or 800k (digits with an " \
+              "optional k/M/G suffix), got #{hash.fetch('bwlimit').inspect}"
+      end
+      value
+    end
+
+    def positive_int(hash, key, default)
+      return default unless hash.key?(key)
+      value = hash.fetch(key)
+      unless value.is_a?(Integer) && value.positive?
+        raise ConfigError, "'#{key}' must be a positive integer"
+      end
+      value
     end
 
     def non_negative_int(hash, key, default)
