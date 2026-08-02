@@ -116,6 +116,7 @@ say "S4: guard on existing destination with no common snapshot"
 zfs list -t snapshot -d 1 -H -o name "$DST_DS" | grep "@$PREFIX-" | while read -r s; do
   zfs destroy -r "$s"
 done
+sleep 1 # snapshot names have 1s resolution
 if $ZR -c "$WORK/main.yml" sync >"$WORK/s4.log" 2>&1; then
   fail "sync succeeded but should have tripped the full-send guard"
 else
