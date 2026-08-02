@@ -34,7 +34,9 @@ module ZFSReplicate
       ZFSReplicate.logger.debug("exec: #{full}")
       stdout, stderr, status = Open3.capture3(full)
       unless status.success?
-        raise ExecutorError, "#{full.split.first} exited with status #{status.exitstatus}: #{stderr.strip}"
+        raise ExecutorError,
+              "#{full.split.first} exited with status #{status.exitstatus} " \
+              "running [#{cmd}]: #{stderr.strip}"
       end
       stdout
     end

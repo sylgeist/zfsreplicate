@@ -75,6 +75,10 @@ zfsreplicate -c /etc/zfsreplicate.yml list
 | `bwlimit` | no | *(none)* | Throttle transfer rate via a local `mbuffer -R` stage (e.g. `50m`, `1G`); requires `mbuffer` (`pkg install mbuffer`) on the host running zfsreplicate |
 | `timeout` | no | *(none)* | Kill a transfer attempt stuck longer than this many seconds and let retry/backoff take over; set with `max_retries: 0` for fail-fast |
 
+Job names must be unique (they key the per-job lock files), and unrecognized
+config keys are warned about at startup — a typo like `keep_snapshot:` is
+surfaced instead of silently applying the default.
+
 Top-level keys (siblings of `replications`):
 
 | Field | Required | Default | Description |
@@ -273,6 +277,19 @@ ssh -o BatchMode=yes root@192.168.1.10 echo ok
 ```sh
 ruby -Ilib -Itest test/run_all.rb
 ```
+
+The unit suite fakes the executor boundary, so it cannot catch mistakes about
+real `zfs` exit codes or stream semantics. Before a release, also run the live
+smoke test on a ZFS host (FreeBSD box, jail, or VM) — it builds two disposable
+file-backed pools and exercises bootstrap, incremental send, recursive
+coverage, retention, the full-send guard, and interrupt/resume end to end:
+
+```sh
+sudo sh test/smoke_test.sh
+```
+
+It needs root, ~1 GB of temp space, and (for the resume scenario only)
+`mbuffer`. Pools and temp files are destroyed on exit.
 
 ## Known limitations
 

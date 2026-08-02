@@ -41,7 +41,10 @@ class TestDataset < Minitest::Test
     snaps = @ds.snapshots
     assert_equal 4, snaps.length
     assert_instance_of ZFSReplicate::Snapshot, snaps.first
-    assert_match /zfs list -t snapshot/, @exec.last_cmd
+    # -d 1 makes the "this dataset's snapshots only" depth explicit instead of
+    # relying on newer OpenZFS implicit-depth behavior.
+    assert_equal 'zfs list -t snapshot -d 1 -H -o name -s creation tank/vms',
+                 @exec.last_cmd
   end
 
   def test_snapshots_are_sorted_oldest_first

@@ -288,6 +288,44 @@ class TestConfig < Minitest::Test
     end
   end
 
+  # A typo'd key silently applying the default is an unattended-failure mode:
+  # `keep_snapshot: 3` would quietly retain 7.
+  def test_warns_on_unknown_replication_key
+    f = write_config(VALID_CONFIG + "    keep_snapshot: 3\n")
+    cfg = ZFSReplicate::Config.load(f.path)
+    assert cfg.warnings.any? { |w| w =~ /keep_snapshot/ && w =~ /vms-backup/ },
+           "expected a warning naming the key and job, got #{cfg.warnings.inspect}"
+    f.close
+  end
+
+  def test_warns_on_unknown_top_level_and_endpoint_keys
+    yaml = VALID_CONFIG.sub("      user: root\n      dataset: tank/vms",
+                            "      user: root\n      prot: 22\n      dataset: tank/vms") +
+           "concurency: 2\n"
+    assert_includes yaml, 'prot: 22' # guard against the sub silently not matching
+    f = write_config(yaml)
+    cfg = ZFSReplicate::Config.load(f.path)
+    assert cfg.warnings.any? { |w| w =~ /prot/ }, "expected endpoint-key warning, got #{cfg.warnings.inspect}"
+    assert cfg.warnings.any? { |w| w =~ /concurency/ }, "expected top-level warning, got #{cfg.warnings.inspect}"
+    f.close
+  end
+
+  def test_no_warnings_for_fully_valid_config
+    f = write_config(VALID_CONFIG)
+    assert_empty ZFSReplicate::Config.load(f.path).warnings
+    f.close
+  end
+
+  # Duplicate names share one lock file, so the second job silently reports
+  # `skipped` on every run.
+  def test_rejects_duplicate_job_names
+    dup = VALID_CONFIG + VALID_CONFIG.lines[1..].join
+    f = write_config(dup)
+    err = assert_raises(ZFSReplicate::ConfigError) { ZFSReplicate::Config.load(f.path) }
+    assert_match(/vms-backup/, err.message)
+    f.close
+  end
+
   def test_timeout_defaults_nil
     f = write_config(VALID_CONFIG)
     assert_nil ZFSReplicate::Config.load(f.path).replications.first.timeout

@@ -18,6 +18,16 @@ class TestLocalExecutor < Minitest::Test
     assert_match /exited with status 1/, err.message
   end
 
+  # When a client box fails unattended, the error must say which command
+  # failed, not just "ssh exited with status 1".
+  def test_error_includes_the_full_command
+    err = assert_raises(ZFSReplicate::ExecutorError) do
+      @exec.run("sh -c 'exit 3'")
+    end
+    assert_includes err.message, "sh -c 'exit 3'"
+    assert_match /status 3/, err.message
+  end
+
   def test_run_with_pipe_streams_stdin_to_remote
     # cat reads stdin and writes to stdout
     out = @exec.run_pipeline('echo payload', 'cat')
