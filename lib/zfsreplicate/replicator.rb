@@ -30,6 +30,16 @@ module ZFSReplicate
       "zfs send -t #{token}"
     end
 
+    # ZFS errors that mean a resume token can never succeed (its source
+    # snapshot is gone or the token is corrupt) — retrying is pointless and
+    # the destination stays wedged until the partial receive is discarded.
+    # Anchored to zfs phrasing so transient transport errors keep retrying.
+    UNRESUMABLE = /cannot resume send|resume token is corrupt|used in the incremental send stream|incremental source .*(?:does not exist|no longer exists)/i
+
+    def self.unresumable?(message)
+      UNRESUMABLE.match?(message)
+    end
+
     # Build the ordered pipeline stages for a transfer. Inserts a local mbuffer
     # rate-limiter between send and recv when bwlimit is set.
     def self.transfer_stages(send_cmd:, recv_cmd:, bwlimit:)
@@ -115,17 +125,20 @@ module ZFSReplicate
       tag = Snapshot.generate_name(@cfg.source.dataset,
                                    prefix: @cfg.snapshot_prefix).split('@').last
       ZFSReplicate.logger.info("Creating snapshot #{@cfg.source.dataset}@#{tag}")
-      src_ds.create_snapshot(tag)
+      src_ds.create_snapshot(tag, recursive: @cfg.recursive)
 
+      # `zfs list` fails on a dataset that does not exist yet, so a first-ever
+      # sync must not list destination snapshots before the send creates it.
+      dst_exists = dst_ds.exists?
       src_snaps = src_ds.managed_snapshots(prefix: @cfg.snapshot_prefix)
-      dst_snaps = dst_ds.managed_snapshots(prefix: @cfg.snapshot_prefix)
+      dst_snaps = dst_exists ? dst_ds.managed_snapshots(prefix: @cfg.snapshot_prefix) : []
       latest    = src_snaps.max
       common    = self.class.common_snapshot(src_snaps, dst_snaps)
 
       self.class.guard_full_send!(
         destination: @cfg.destination.dataset,
         common: common,
-        destination_exists: common.nil? && dst_ds.exists?,
+        destination_exists: common.nil? && dst_exists,
         force: @cfg.force
       )
 
@@ -140,19 +153,29 @@ module ZFSReplicate
                        fresh_send: fresh_send, recv_fresh: recv_fresh,
                        recv_resume: recv_resume)
 
+      # A resumed stream can cover only part of an incremental package while
+      # the pipeline exits 0, leaving the destination behind `latest`. Pruning
+      # then could destroy the destination's only common base, so verify first.
+      dst_snaps_after = dst_ds.managed_snapshots(prefix: @cfg.snapshot_prefix)
+      unless dst_snaps_after.any? { |s| s.tag == latest.tag }
+        raise ExecutorError,
+              "Destination #{@cfg.destination.dataset} is still behind after " \
+              "the transfer (#{latest.tag} not present — a resumed stream may " \
+              "cover only part of an incremental package); skipping prune. " \
+              "Re-run to catch up."
+      end
+
       prune_source = self.class.snapshots_to_prune(src_snaps, keep: @cfg.keep_snapshots)
       prune_source.each do |snap|
         ZFSReplicate.logger.info("Pruning source #{snap.tag}")
-        src_ds.destroy_snapshot(snap.tag)
+        src_ds.destroy_snapshot(snap.tag, recursive: @cfg.recursive)
       end
 
-      prune_dest = self.class.snapshots_to_prune(
-        dst_ds.managed_snapshots(prefix: @cfg.snapshot_prefix),
-        keep: @cfg.keep_snapshots
-      )
+      prune_dest = self.class.snapshots_to_prune(dst_snaps_after,
+                                                 keep: @cfg.keep_snapshots)
       prune_dest.each do |snap|
         ZFSReplicate.logger.info("Pruning destination #{snap.tag}")
-        dst_ds.destroy_snapshot(snap.tag)
+        dst_ds.destroy_snapshot(snap.tag, recursive: @cfg.recursive)
       end
     end
 
@@ -181,6 +204,13 @@ module ZFSReplicate
           src_exec.run_pipeline(*stages, timeout: @cfg.timeout)
           return
         rescue ExecutorError => e
+          if token && self.class.unresumable?(e.message)
+            raise ExecutorError,
+                  "Resume token on #{@cfg.destination.dataset} is no longer " \
+                  "usable (#{e.message}). Discard the partial receive with " \
+                  "'zfs recv -A #{@cfg.destination.dataset}' on the " \
+                  "destination, then re-run."
+          end
           attempt += 1
           raise if !@cfg.resume || attempt > @cfg.max_retries
           delay = @cfg.retry_delay * (2**(attempt - 1))

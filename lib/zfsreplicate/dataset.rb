@@ -15,7 +15,11 @@ module ZFSReplicate
     def exists?
       @executor.run("zfs list -H -o name #{@name}")
       true
-    rescue ExecutorError
+    rescue ExecutorError => e
+      # Only ZFS saying the dataset is missing means "no". Anything else
+      # (SSH failure, permissions) must propagate — treating it as absent
+      # would let a full send overwrite an existing destination.
+      raise unless e.message =~ /dataset does not exist/
       false
     end
 
@@ -39,12 +43,12 @@ module ZFSReplicate
       managed_snapshots(prefix: prefix).max
     end
 
-    def create_snapshot(tag)
-      @executor.run("zfs snapshot #{@name}@#{tag}")
+    def create_snapshot(tag, recursive: false)
+      @executor.run("zfs snapshot#{' -r' if recursive} #{@name}@#{tag}")
     end
 
-    def destroy_snapshot(tag)
-      @executor.run("zfs destroy #{@name}@#{tag}")
+    def destroy_snapshot(tag, recursive: false)
+      @executor.run("zfs destroy#{' -r' if recursive} #{@name}@#{tag}")
     end
   end
 end

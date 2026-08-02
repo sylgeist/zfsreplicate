@@ -64,8 +64,8 @@ zfsreplicate -c /etc/zfsreplicate.yml list
 | `destination.user` | no | `root` | SSH user |
 | `destination.port` | no | `22` | SSH port |
 | `destination.identity` | no | *(ssh default)* | Path to an SSH private key (`ssh -i`) |
-| `recursive` | no | `false` | Pass `-R` to `zfs send` |
-| `keep_snapshots` | no | `7` | Number of managed snapshots to retain on each side |
+| `recursive` | no | `false` | Replicate the dataset and all its children: snapshots are created/destroyed with `-r` and sent with `zfs send -R`, so retention applies to the whole subtree |
+| `keep_snapshots` | no | `7` | Number of managed snapshots to retain on each side (minimum `1`) |
 | `snapshot_prefix` | no | `zfsreplicate` | Prefix for auto-created snapshot names |
 | `force` | no | `false` | Permit a full `zfs recv -F` to a destination that already exists but shares no snapshot (overwrites it) |
 | `resume` | no | `true` | Use `zfs recv -s` and retry/resume interrupted transfers |
@@ -182,7 +182,10 @@ Each `sync` run:
 2. Lists managed snapshots on source and destination
 3. Finds the most recent common snapshot (by tag)
 4. Sends an **incremental** stream (`zfs send -I`) if a common snapshot exists, or a **full** stream if the destination is empty
-5. Prunes old managed snapshots on both sides, keeping the most recent `keep_snapshots`
+5. Verifies the destination now holds the latest snapshot (a resumed stream can
+   cover only part of an incremental package; if the destination is still
+   behind, the job fails with a re-run hint instead of pruning)
+6. Prunes old managed snapshots on both sides, keeping the most recent `keep_snapshots`
 
 If there is no common snapshot and the destination dataset **already exists**, the job aborts rather than overwriting it with a full `zfs recv -F` — this requires manual intervention (e.g. `zfs destroy` the stale destination before re-running) or setting `force: true` to opt into the overwrite. A full send to a destination that does not yet exist is always allowed.
 
@@ -205,6 +208,9 @@ Set `resume: false` on a job to restore the old behavior (a single attempt with
 
 To discard a stuck partial receive and force a fresh send, run
 `zfs recv -A <destination-dataset>` on the destination before the next sync.
+If a resume token can never succeed (its source snapshot was destroyed, or the
+token is corrupt), the job detects this, skips the pointless retries, and the
+error message names that exact `zfs recv -A` command.
 
 ## Parallel execution
 
@@ -217,6 +223,18 @@ zfsreplicate -j 4 sync        # up to 4 jobs at once
 ```
 
 The cap can also be set in config (`concurrency: 4`); the `-j` flag overrides it.
+
+When several jobs replicate the **same source dataset** to different
+destinations, give each job its own `snapshot_prefix`. With a shared prefix the
+jobs create and prune one shared snapshot set, so one job's pruning can destroy
+the only snapshot another destination has in common once it falls more than
+`keep_snapshots` runs behind.
+
+Changing `snapshot_prefix` on an already-deployed job starts a new snapshot
+lineage: the next run has no common snapshot under the new prefix, so it either
+trips the full-send guard or (with `force: true`) does a full resend that rolls
+the destination back. Old-prefix snapshots are no longer managed — destroy them
+manually once the new lineage is established.
 
 Each job takes a per-job lock (`<lock_dir>/<job>.lock`) for the duration of its
 run. If a job is already running in another process (for example, a still-running

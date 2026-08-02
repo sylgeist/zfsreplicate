@@ -11,13 +11,18 @@ require 'zfsreplicate/config'
 class RecordingExecutor
   attr_reader :commands, :pipelines, :pipeline_timeouts, :events
 
-  # responses: array of [Regexp, String | :raise | Array<String|:raise>]
+  # responses: array of [Regexp, String | :raise | Proc | Array<String|:raise>]
   #   - an Array value is consumed one element per matching call; the last
   #     element sticks once reached.
-  # pipeline_failures: the first N run_pipeline calls raise ExecutorError.
-  def initialize(responses = [], pipeline_failures: 0)
+  #   - a Proc is called per matching call and may return a String or :raise,
+  #     letting a response depend on test state (e.g. "after the transfer ran").
+  # pipeline_failures: the first N run_pipeline calls raise ExecutorError,
+  # with pipeline_error as the message.
+  def initialize(responses = [], pipeline_failures: 0,
+                 pipeline_error: "pipeline failed (simulated)")
     @responses = responses
     @pipeline_failures = pipeline_failures
+    @pipeline_error = pipeline_error
     @commands = []
     @pipelines = []
     @pipeline_timeouts = []
@@ -38,8 +43,13 @@ class RecordingExecutor
     pair = @responses.find { |rx, _| rx =~ cmd }
     return "" unless pair
     value = pair[1]
+    value = value.call if value.is_a?(Proc)
     value = (value.length > 1 ? value.shift : value.first) if value.is_a?(Array)
-    raise ZFSReplicate::ExecutorError, "command failed: #{cmd}" if value == :raise
+    # :raise models the missing-dataset failure, phrased the way zfs phrases it.
+    if value == :raise
+      raise ZFSReplicate::ExecutorError,
+            "zfs exited with status 1: cannot open: dataset does not exist (#{cmd})"
+    end
     value || ""
   end
 
@@ -48,7 +58,7 @@ class RecordingExecutor
     @pipeline_timeouts << timeout
     @events << [:pipeline, cmds.first]
     if @pipelines.length <= @pipeline_failures
-      raise ZFSReplicate::ExecutorError, "pipeline failed (simulated)"
+      raise ZFSReplicate::ExecutorError, @pipeline_error
     end
     ""
   end
@@ -80,6 +90,9 @@ class TestReplicatorRun < Minitest::Test
     backup/vms@zfsreplicate-20260410-000000
   OUT
 
+  # What the destination lists after the incremental transfer lands.
+  DST_THREE = DST_TWO + "backup/vms@zfsreplicate-20260420-000000\n"
+
   def build(src_resp, dst_resp, cfg, src_failures: 0)
     @delays = []
     @src = RecordingExecutor.new(src_resp, pipeline_failures: src_failures)
@@ -91,7 +104,7 @@ class TestReplicatorRun < Minitest::Test
   def test_creates_source_snapshot
     rep = build(
       [[/zfs list -t snapshot/, SRC_THREE]],
-      [[/zfs list -t snapshot/, ""], [/zfs list -H -o name/, :raise]],
+      [[/zfs list -t snapshot/, DST_AFTER_FULL], [/zfs list -H -o name/, :raise]],
       replication
     )
     rep.run
@@ -99,10 +112,33 @@ class TestReplicatorRun < Minitest::Test
            "expected a zfs snapshot command, got #{@src.commands.inspect}"
   end
 
+  DST_AFTER_FULL = "backup/vms@zfsreplicate-20260420-000000\n"
+
+  # Real `zfs list` exits non-zero for a dataset that does not exist yet, so a
+  # first-ever sync must not list destination snapshots before the full send
+  # creates the dataset.
+  def test_full_send_bootstraps_missing_destination
+    @delays = []
+    @src = RecordingExecutor.new([[/zfs list -t snapshot/, SRC_THREE]])
+    before_transfer = -> { @src.pipelines.empty? }
+    @dst = RecordingExecutor.new([
+      [/zfs list -t snapshot/, -> { before_transfer.call ? :raise : DST_AFTER_FULL }],
+      [/zfs list -H -o name/, -> { before_transfer.call ? :raise : "backup/vms\n" }]
+    ])
+    rep = ZFSReplicate::Replicator.new(replication, src_executor: @src,
+                                       dst_executor: @dst,
+                                       sleeper: ->(s) { @delays << s })
+    rep.run
+    assert_equal 1, @src.pipelines.length
+    send_cmd, recv_cmd = @src.pipelines.first
+    assert_match /\Azfs send tank\/vms@zfsreplicate-20260420-000000\z/, send_cmd
+    assert_match /zfs recv -F -s backup\/vms/, recv_cmd
+  end
+
   def test_full_send_to_fresh_destination
     rep = build(
       [[/zfs list -t snapshot/, SRC_THREE]],
-      [[/zfs list -t snapshot/, ""], [/zfs list -H -o name/, :raise]],
+      [[/zfs list -t snapshot/, DST_AFTER_FULL], [/zfs list -H -o name/, :raise]],
       replication
     )
     rep.run
@@ -115,7 +151,7 @@ class TestReplicatorRun < Minitest::Test
   def test_incremental_send_when_common_exists
     rep = build(
       [[/zfs list -t snapshot/, SRC_THREE]],
-      [[/zfs list -t snapshot/, DST_TWO]],
+      [[/zfs list -t snapshot/, [DST_TWO, DST_THREE]]],
       replication
     )
     rep.run
@@ -141,17 +177,34 @@ class TestReplicatorRun < Minitest::Test
   def test_force_allows_send_to_existing_destination
     rep = build(
       [[/zfs list -t snapshot/, SRC_THREE]],
-      [[/zfs list -t snapshot/, ""], [/zfs list -H -o name/, "backup/vms\n"]],
+      [[/zfs list -t snapshot/, ["", DST_AFTER_FULL]],
+       [/zfs list -H -o name/, "backup/vms\n"]],
       replication(force: true)
     )
     rep.run
     assert_equal 1, @src.pipelines.length
   end
 
+  # A resumed transfer can complete only the interrupted snapshot of a
+  # multi-snapshot -I package, leaving the destination behind `latest` while
+  # the pipeline exits 0. Pruning at that point can destroy the destination's
+  # only common base, so the run must verify and refuse to prune.
+  def test_destination_behind_after_transfer_fails_before_pruning
+    rep = build(
+      [[/zfs list -t snapshot/, SRC_THREE]],
+      [[/zfs list -t snapshot/, DST_TWO]], # still behind after "success"
+      replication(keep: 1)
+    )
+    err = assert_raises(ZFSReplicate::ExecutorError) { rep.run }
+    assert_match /behind/, err.message
+    assert_empty @src.commands.grep(/zfs destroy/), "must not prune source"
+    assert_empty @dst.commands.grep(/zfs destroy/), "must not prune destination"
+  end
+
   def test_prunes_old_snapshots_on_both_sides
     rep = build(
       [[/zfs list -t snapshot/, SRC_THREE]],
-      [[/zfs list -t snapshot/, DST_TWO]],
+      [[/zfs list -t snapshot/, [DST_TWO, DST_THREE]]],
       replication(keep: 1)
     )
     rep.run
@@ -159,15 +212,37 @@ class TestReplicatorRun < Minitest::Test
     src_destroys = @src.commands.grep(/zfs destroy/)
     assert_equal 2, src_destroys.length
     assert(src_destroys.any? { |c| c.include?('zfsreplicate-20260401-000000') })
-    # destination had 2 managed, keep 1 => destroy 1 oldest
+    # destination has 3 managed after the transfer, keep 1 => destroy 2 oldest
     dst_destroys = @dst.commands.grep(/zfs destroy/)
-    assert_equal 1, dst_destroys.length
+    assert_equal 2, dst_destroys.length
+  end
+
+  # `zfs send -R` only replicates children whose snapshots exist, so a
+  # recursive job must snapshot (and prune) with -r or the "whole-pool mirror"
+  # silently covers only the parent.
+  def test_recursive_job_snapshots_and_destroys_recursively
+    rep = build(
+      [[/zfs list -t snapshot/, SRC_THREE]],
+      [[/zfs list -t snapshot/, [DST_TWO, DST_THREE]]],
+      replication(recursive: true, keep: 1)
+    )
+    rep.run
+    assert @src.commands.any? { |c| c =~ /\Azfs snapshot -r tank\/vms@zfsreplicate-\d{8}-\d{6}\z/ },
+           "expected recursive snapshot, got #{@src.commands.inspect}"
+    src_destroys = @src.commands.grep(/zfs destroy/)
+    refute_empty src_destroys
+    assert src_destroys.all? { |c| c =~ /\Azfs destroy -r tank\/vms@/ },
+           "expected recursive source destroys, got #{src_destroys.inspect}"
+    dst_destroys = @dst.commands.grep(/zfs destroy/)
+    refute_empty dst_destroys
+    assert dst_destroys.all? { |c| c =~ /\Azfs destroy -r backup\/vms@/ },
+           "expected recursive destination destroys, got #{dst_destroys.inspect}"
   end
 
   def test_retries_then_succeeds_and_switches_to_resume
     rep = build(
       [[/zfs list -t snapshot/, SRC_THREE]],
-      [[/zfs list -t snapshot/, ""],
+      [[/zfs list -t snapshot/, DST_AFTER_FULL],
        [/zfs list -H -o name/, :raise],
        [/receive_resume_token/, ["-", "-", "1-resumetoken"]]],
       replication,
@@ -197,7 +272,7 @@ class TestReplicatorRun < Minitest::Test
   def test_resumes_leftover_token_before_creating_snapshot
     rep = build(
       [[/zfs list -t snapshot/, SRC_THREE]],
-      [[/zfs list -t snapshot/, ""],
+      [[/zfs list -t snapshot/, DST_AFTER_FULL],
        [/zfs list -H -o name/, :raise],
        [/receive_resume_token/, ["1-leftover", "1-leftover", "-"]]],
       replication
@@ -213,10 +288,34 @@ class TestReplicatorRun < Minitest::Test
     assert resume_idx < snap_idx, "expected leftover resume before snapshot creation"
   end
 
+  # A resume token whose source snapshot is gone fails on every attempt until a
+  # human runs `zfs recv -A`; retrying is pointless and the error must say how
+  # to recover, or one odd interruption becomes a permanent unattended outage.
+  def test_unresumable_token_fails_fast_with_remediation
+    @delays = []
+    @src = RecordingExecutor.new(
+      [[/zfs list -t snapshot/, SRC_THREE]],
+      pipeline_failures: 99,
+      pipeline_error: "ssh exited with status 1: cannot receive: incremental source 1-stale does not exist"
+    )
+    @dst = RecordingExecutor.new([
+      [/receive_resume_token/, "1-stale"],
+      [/zfs list -t snapshot/, ""],
+      [/zfs list -H -o name/, "backup/vms\n"]
+    ])
+    rep = ZFSReplicate::Replicator.new(replication, src_executor: @src,
+                                       dst_executor: @dst,
+                                       sleeper: ->(s) { @delays << s })
+    err = assert_raises(ZFSReplicate::ExecutorError) { rep.run }
+    assert_match /zfs recv -A backup\/vms/, err.message
+    assert_equal 1, @src.pipelines.length, "must not retry an unresumable token"
+    assert_empty @delays
+  end
+
   def test_resume_disabled_is_single_attempt_no_retry
     rep = build(
       [[/zfs list -t snapshot/, SRC_THREE]],
-      [[/zfs list -t snapshot/, ""], [/zfs list -H -o name/, :raise]],
+      [[/zfs list -t snapshot/, DST_AFTER_FULL], [/zfs list -H -o name/, :raise]],
       replication(resume: false),
       src_failures: 1
     )
@@ -229,7 +328,7 @@ class TestReplicatorRun < Minitest::Test
   def test_compressed_send_flag_reaches_send_stage
     rep = build(
       [[/zfs list -t snapshot/, SRC_THREE]],
-      [[/zfs list -t snapshot/, ""], [/zfs list -H -o name/, :raise]],
+      [[/zfs list -t snapshot/, DST_AFTER_FULL], [/zfs list -H -o name/, :raise]],
       replication(compressed_send: true)
     )
     rep.run
@@ -241,7 +340,7 @@ class TestReplicatorRun < Minitest::Test
   def test_timeout_is_passed_to_run_pipeline
     rep = build(
       [[/zfs list -t snapshot/, SRC_THREE]],
-      [[/zfs list -t snapshot/, ""], [/zfs list -H -o name/, :raise]],
+      [[/zfs list -t snapshot/, DST_AFTER_FULL], [/zfs list -H -o name/, :raise]],
       replication(timeout: 600)
     )
     rep.run
@@ -254,7 +353,7 @@ class TestReplicatorRun < Minitest::Test
     begin
       rep = build(
         [[/zfs list -t snapshot/, SRC_THREE]],
-        [[/zfs list -t snapshot/, ""], [/zfs list -H -o name/, :raise]],
+        [[/zfs list -t snapshot/, DST_AFTER_FULL], [/zfs list -H -o name/, :raise]],
         replication(bwlimit: '50m')
       )
       rep.run

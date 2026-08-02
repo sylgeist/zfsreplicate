@@ -226,6 +226,68 @@ class TestConfig < Minitest::Test
     f.close
   end
 
+  def test_keep_snapshots_rejects_zero
+    # keep_snapshots: 0 would prune every managed snapshot, including the one
+    # just sent, leaving no common base for the next run.
+    f = write_config(VALID_CONFIG.sub('keep_snapshots: 14', 'keep_snapshots: 0'))
+    err = assert_raises(ZFSReplicate::ConfigError) { ZFSReplicate::Config.load(f.path) }
+    assert_match(/keep_snapshots/, err.message)
+    f.close
+  end
+
+  def test_keep_snapshots_rejects_negative
+    f = write_config(VALID_CONFIG.sub('keep_snapshots: 14', 'keep_snapshots: -2'))
+    assert_raises(ZFSReplicate::ConfigError) { ZFSReplicate::Config.load(f.path) }
+    f.close
+  end
+
+  def test_keep_snapshots_rejects_non_integer
+    f = write_config(VALID_CONFIG.sub('keep_snapshots: 14', 'keep_snapshots: lots'))
+    assert_raises(ZFSReplicate::ConfigError) { ZFSReplicate::Config.load(f.path) }
+    f.close
+  end
+
+  def test_bwlimit_accepts_integer_and_normalizes_to_string
+    f = write_config(VALID_CONFIG + "    bwlimit: 50\n")
+    assert_equal '50', ZFSReplicate::Config.load(f.path).replications.first.bwlimit
+    f.close
+  end
+
+  def test_bwlimit_rejects_malformed_values
+    ['bwlimit: fast', "bwlimit: '50 m'", 'bwlimit: 50mb', 'bwlimit: -50m',
+     'bwlimit: 0', "bwlimit: '0k'"].each do |bad|
+      f = write_config(VALID_CONFIG + "    #{bad}\n")
+      err = assert_raises(ZFSReplicate::ConfigError, "expected #{bad.inspect} to be rejected") do
+        ZFSReplicate::Config.load(f.path)
+      end
+      assert_match(/bwlimit/, err.message)
+      f.close
+    end
+  end
+
+  def test_rejects_dataset_names_outside_zfs_charset
+    ['tank/vms; rm -rf /', 'tank/my vms', "tank/vms\n"].each do |bad|
+      f = write_config(VALID_CONFIG.sub('dataset: tank/vms', "dataset: #{bad.inspect}"))
+      err = assert_raises(ZFSReplicate::ConfigError, "expected #{bad.inspect} to be rejected") do
+        ZFSReplicate::Config.load(f.path)
+      end
+      assert_match(/dataset/, err.message)
+      f.close
+    end
+  end
+
+  def test_rejects_snapshot_prefix_outside_zfs_charset
+    ['my prefix', 'pre;fix', 'pre/fix', 'pre@fix'].each do |bad|
+      f = write_config(VALID_CONFIG.sub('snapshot_prefix: zfsreplicate',
+                                        "snapshot_prefix: #{bad.inspect}"))
+      err = assert_raises(ZFSReplicate::ConfigError, "expected #{bad.inspect} to be rejected") do
+        ZFSReplicate::Config.load(f.path)
+      end
+      assert_match(/snapshot_prefix/, err.message)
+      f.close
+    end
+  end
+
   def test_timeout_defaults_nil
     f = write_config(VALID_CONFIG)
     assert_nil ZFSReplicate::Config.load(f.path).replications.first.timeout
