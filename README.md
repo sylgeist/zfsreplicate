@@ -278,6 +278,19 @@ ssh -o BatchMode=yes root@192.168.1.10 echo ok
 ruby -Ilib -Itest test/run_all.rb
 ```
 
+The unit suite fakes the executor boundary, so it cannot catch mistakes about
+real `zfs` exit codes or stream semantics. Before a release, also run the live
+smoke test on a ZFS host (FreeBSD box, jail, or VM) — it builds two disposable
+file-backed pools and exercises bootstrap, incremental send, recursive
+coverage, retention, the full-send guard, and interrupt/resume end to end:
+
+```sh
+sudo sh test/smoke_test.sh
+```
+
+It needs root, ~1 GB of temp space, and (for the resume scenario only)
+`mbuffer`. Pools and temp files are destroyed on exit.
+
 ## Known limitations
 
 - When both endpoints are remote, the stream is relayed through the orchestrating host
