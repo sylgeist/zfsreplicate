@@ -11,9 +11,11 @@ require 'zfsreplicate/config'
 class RecordingExecutor
   attr_reader :commands, :pipelines, :pipeline_timeouts, :events
 
-  # responses: array of [Regexp, String | :raise | Array<String|:raise>]
+  # responses: array of [Regexp, String | :raise | Proc | Array<String|:raise>]
   #   - an Array value is consumed one element per matching call; the last
   #     element sticks once reached.
+  #   - a Proc is called per matching call and may return a String or :raise,
+  #     letting a response depend on test state (e.g. "after the transfer ran").
   # pipeline_failures: the first N run_pipeline calls raise ExecutorError.
   def initialize(responses = [], pipeline_failures: 0)
     @responses = responses
@@ -38,6 +40,7 @@ class RecordingExecutor
     pair = @responses.find { |rx, _| rx =~ cmd }
     return "" unless pair
     value = pair[1]
+    value = value.call if value.is_a?(Proc)
     value = (value.length > 1 ? value.shift : value.first) if value.is_a?(Array)
     raise ZFSReplicate::ExecutorError, "command failed: #{cmd}" if value == :raise
     value || ""
@@ -97,6 +100,29 @@ class TestReplicatorRun < Minitest::Test
     rep.run
     assert @src.commands.any? { |c| c =~ /\Azfs snapshot tank\/vms@zfsreplicate-\d{8}-\d{6}\z/ },
            "expected a zfs snapshot command, got #{@src.commands.inspect}"
+  end
+
+  DST_AFTER_FULL = "backup/vms@zfsreplicate-20260420-000000\n"
+
+  # Real `zfs list` exits non-zero for a dataset that does not exist yet, so a
+  # first-ever sync must not list destination snapshots before the full send
+  # creates the dataset.
+  def test_full_send_bootstraps_missing_destination
+    @delays = []
+    @src = RecordingExecutor.new([[/zfs list -t snapshot/, SRC_THREE]])
+    before_transfer = -> { @src.pipelines.empty? }
+    @dst = RecordingExecutor.new([
+      [/zfs list -t snapshot/, -> { before_transfer.call ? :raise : DST_AFTER_FULL }],
+      [/zfs list -H -o name/, -> { before_transfer.call ? :raise : "backup/vms\n" }]
+    ])
+    rep = ZFSReplicate::Replicator.new(replication, src_executor: @src,
+                                       dst_executor: @dst,
+                                       sleeper: ->(s) { @delays << s })
+    rep.run
+    assert_equal 1, @src.pipelines.length
+    send_cmd, recv_cmd = @src.pipelines.first
+    assert_match /\Azfs send tank\/vms@zfsreplicate-20260420-000000\z/, send_cmd
+    assert_match /zfs recv -F -s backup\/vms/, recv_cmd
   end
 
   def test_full_send_to_fresh_destination

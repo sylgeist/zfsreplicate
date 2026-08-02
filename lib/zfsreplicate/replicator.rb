@@ -117,15 +117,18 @@ module ZFSReplicate
       ZFSReplicate.logger.info("Creating snapshot #{@cfg.source.dataset}@#{tag}")
       src_ds.create_snapshot(tag)
 
+      # `zfs list` fails on a dataset that does not exist yet, so a first-ever
+      # sync must not list destination snapshots before the send creates it.
+      dst_exists = dst_ds.exists?
       src_snaps = src_ds.managed_snapshots(prefix: @cfg.snapshot_prefix)
-      dst_snaps = dst_ds.managed_snapshots(prefix: @cfg.snapshot_prefix)
+      dst_snaps = dst_exists ? dst_ds.managed_snapshots(prefix: @cfg.snapshot_prefix) : []
       latest    = src_snaps.max
       common    = self.class.common_snapshot(src_snaps, dst_snaps)
 
       self.class.guard_full_send!(
         destination: @cfg.destination.dataset,
         common: common,
-        destination_exists: common.nil? && dst_ds.exists?,
+        destination_exists: common.nil? && dst_exists,
         force: @cfg.force
       )
 
