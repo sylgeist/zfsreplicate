@@ -152,16 +152,26 @@ module ZFSReplicate
                        fresh_send: fresh_send, recv_fresh: recv_fresh,
                        recv_resume: recv_resume)
 
+      # A resumed stream can cover only part of an incremental package while
+      # the pipeline exits 0, leaving the destination behind `latest`. Pruning
+      # then could destroy the destination's only common base, so verify first.
+      dst_snaps_after = dst_ds.managed_snapshots(prefix: @cfg.snapshot_prefix)
+      unless dst_snaps_after.any? { |s| s.tag == latest.tag }
+        raise ExecutorError,
+              "Destination #{@cfg.destination.dataset} is still behind after " \
+              "the transfer (#{latest.tag} not present — a resumed stream may " \
+              "cover only part of an incremental package); skipping prune. " \
+              "Re-run to catch up."
+      end
+
       prune_source = self.class.snapshots_to_prune(src_snaps, keep: @cfg.keep_snapshots)
       prune_source.each do |snap|
         ZFSReplicate.logger.info("Pruning source #{snap.tag}")
         src_ds.destroy_snapshot(snap.tag, recursive: @cfg.recursive)
       end
 
-      prune_dest = self.class.snapshots_to_prune(
-        dst_ds.managed_snapshots(prefix: @cfg.snapshot_prefix),
-        keep: @cfg.keep_snapshots
-      )
+      prune_dest = self.class.snapshots_to_prune(dst_snaps_after,
+                                                 keep: @cfg.keep_snapshots)
       prune_dest.each do |snap|
         ZFSReplicate.logger.info("Pruning destination #{snap.tag}")
         dst_ds.destroy_snapshot(snap.tag, recursive: @cfg.recursive)
