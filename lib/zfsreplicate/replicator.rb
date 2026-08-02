@@ -30,6 +30,15 @@ module ZFSReplicate
       "zfs send -t #{token}"
     end
 
+    # ZFS errors that mean a resume token can never succeed (its source
+    # snapshot is gone or the token is corrupt) — retrying is pointless and
+    # the destination stays wedged until the partial receive is discarded.
+    UNRESUMABLE = /does not exist|no longer exists|used in the incremental send stream|invalid/i
+
+    def self.unresumable?(message)
+      UNRESUMABLE.match?(message)
+    end
+
     # Build the ordered pipeline stages for a transfer. Inserts a local mbuffer
     # rate-limiter between send and recv when bwlimit is set.
     def self.transfer_stages(send_cmd:, recv_cmd:, bwlimit:)
@@ -184,6 +193,13 @@ module ZFSReplicate
           src_exec.run_pipeline(*stages, timeout: @cfg.timeout)
           return
         rescue ExecutorError => e
+          if token && self.class.unresumable?(e.message)
+            raise ExecutorError,
+                  "Resume token on #{@cfg.destination.dataset} is no longer " \
+                  "usable (#{e.message}). Discard the partial receive with " \
+                  "'zfs recv -A #{@cfg.destination.dataset}' on the " \
+                  "destination, then re-run."
+          end
           attempt += 1
           raise if !@cfg.resume || attempt > @cfg.max_retries
           delay = @cfg.retry_delay * (2**(attempt - 1))

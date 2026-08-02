@@ -16,10 +16,13 @@ class RecordingExecutor
   #     element sticks once reached.
   #   - a Proc is called per matching call and may return a String or :raise,
   #     letting a response depend on test state (e.g. "after the transfer ran").
-  # pipeline_failures: the first N run_pipeline calls raise ExecutorError.
-  def initialize(responses = [], pipeline_failures: 0)
+  # pipeline_failures: the first N run_pipeline calls raise ExecutorError,
+  # with pipeline_error as the message.
+  def initialize(responses = [], pipeline_failures: 0,
+                 pipeline_error: "pipeline failed (simulated)")
     @responses = responses
     @pipeline_failures = pipeline_failures
+    @pipeline_error = pipeline_error
     @commands = []
     @pipelines = []
     @pipeline_timeouts = []
@@ -51,7 +54,7 @@ class RecordingExecutor
     @pipeline_timeouts << timeout
     @events << [:pipeline, cmds.first]
     if @pipelines.length <= @pipeline_failures
-      raise ZFSReplicate::ExecutorError, "pipeline failed (simulated)"
+      raise ZFSReplicate::ExecutorError, @pipeline_error
     end
     ""
   end
@@ -259,6 +262,30 @@ class TestReplicatorRun < Minitest::Test
     resume_idx = @src.events.index { |kind, v| kind == :pipeline && v == 'zfs send -t 1-leftover' }
     snap_idx   = @src.events.index { |kind, v| kind == :run && v =~ /\Azfs snapshot / }
     assert resume_idx < snap_idx, "expected leftover resume before snapshot creation"
+  end
+
+  # A resume token whose source snapshot is gone fails on every attempt until a
+  # human runs `zfs recv -A`; retrying is pointless and the error must say how
+  # to recover, or one odd interruption becomes a permanent unattended outage.
+  def test_unresumable_token_fails_fast_with_remediation
+    @delays = []
+    @src = RecordingExecutor.new(
+      [[/zfs list -t snapshot/, SRC_THREE]],
+      pipeline_failures: 99,
+      pipeline_error: "ssh exited with status 1: cannot receive: incremental source 1-stale does not exist"
+    )
+    @dst = RecordingExecutor.new([
+      [/receive_resume_token/, "1-stale"],
+      [/zfs list -t snapshot/, ""],
+      [/zfs list -H -o name/, "backup/vms\n"]
+    ])
+    rep = ZFSReplicate::Replicator.new(replication, src_executor: @src,
+                                       dst_executor: @dst,
+                                       sleeper: ->(s) { @delays << s })
+    err = assert_raises(ZFSReplicate::ExecutorError) { rep.run }
+    assert_match /zfs recv -A backup\/vms/, err.message
+    assert_equal 1, @src.pipelines.length, "must not retry an unresumable token"
+    assert_empty @delays
   end
 
   def test_resume_disabled_is_single_attempt_no_retry
