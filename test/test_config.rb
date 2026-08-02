@@ -254,7 +254,8 @@ class TestConfig < Minitest::Test
   end
 
   def test_bwlimit_rejects_malformed_values
-    ['bwlimit: fast', "bwlimit: '50 m'", 'bwlimit: 50mb', 'bwlimit: -50m'].each do |bad|
+    ['bwlimit: fast', "bwlimit: '50 m'", 'bwlimit: 50mb', 'bwlimit: -50m',
+     'bwlimit: 0', "bwlimit: '0k'"].each do |bad|
       f = write_config(VALID_CONFIG + "    #{bad}\n")
       err = assert_raises(ZFSReplicate::ConfigError, "expected #{bad.inspect} to be rejected") do
         ZFSReplicate::Config.load(f.path)

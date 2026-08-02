@@ -230,6 +230,12 @@ jobs create and prune one shared snapshot set, so one job's pruning can destroy
 the only snapshot another destination has in common once it falls more than
 `keep_snapshots` runs behind.
 
+Changing `snapshot_prefix` on an already-deployed job starts a new snapshot
+lineage: the next run has no common snapshot under the new prefix, so it either
+trips the full-send guard or (with `force: true`) does a full resend that rolls
+the destination back. Old-prefix snapshots are no longer managed — destroy them
+manually once the new lineage is established.
+
 Each job takes a per-job lock (`<lock_dir>/<job>.lock`) for the duration of its
 run. If a job is already running in another process (for example, a still-running
 previous cron invocation), it is **skipped** with a warning rather than run twice.

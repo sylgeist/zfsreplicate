@@ -15,7 +15,11 @@ module ZFSReplicate
     def exists?
       @executor.run("zfs list -H -o name #{@name}")
       true
-    rescue ExecutorError
+    rescue ExecutorError => e
+      # Only ZFS saying the dataset is missing means "no". Anything else
+      # (SSH failure, permissions) must propagate — treating it as absent
+      # would let a full send overwrite an existing destination.
+      raise unless e.message =~ /dataset does not exist/
       false
     end
 

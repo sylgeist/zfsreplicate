@@ -45,7 +45,11 @@ class RecordingExecutor
     value = pair[1]
     value = value.call if value.is_a?(Proc)
     value = (value.length > 1 ? value.shift : value.first) if value.is_a?(Array)
-    raise ZFSReplicate::ExecutorError, "command failed: #{cmd}" if value == :raise
+    # :raise models the missing-dataset failure, phrased the way zfs phrases it.
+    if value == :raise
+      raise ZFSReplicate::ExecutorError,
+            "zfs exited with status 1: cannot open: dataset does not exist (#{cmd})"
+    end
     value || ""
   end
 

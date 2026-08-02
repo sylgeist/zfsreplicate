@@ -33,7 +33,8 @@ module ZFSReplicate
     # ZFS errors that mean a resume token can never succeed (its source
     # snapshot is gone or the token is corrupt) — retrying is pointless and
     # the destination stays wedged until the partial receive is discarded.
-    UNRESUMABLE = /does not exist|no longer exists|used in the incremental send stream|invalid/i
+    # Anchored to zfs phrasing so transient transport errors keep retrying.
+    UNRESUMABLE = /cannot resume send|resume token is corrupt|used in the incremental send stream|incremental source .*(?:does not exist|no longer exists)/i
 
     def self.unresumable?(message)
       UNRESUMABLE.match?(message)

@@ -80,6 +80,30 @@ end
 class TestReplicatorResumeCommands < Minitest::Test
   include ZFSReplicate
 
+  def test_unresumable_matches_zfs_resume_errors
+    [
+      'cannot resume send: resume token is corrupt',
+      "ssh exited with status 1: cannot receive: incremental source 1-stale does not exist",
+      "cannot resume send: 'tank/vms@x' used in the incremental send stream"
+    ].each do |msg|
+      assert ZFSReplicate::Replicator.unresumable?(msg), "expected unresumable: #{msg}"
+    end
+  end
+
+  # Transient transport errors and non-token failures must keep the normal
+  # retry path — advising `zfs recv -A` there would discard a valid partial
+  # receive.
+  def test_unresumable_ignores_transient_and_unrelated_errors
+    [
+      'ssh exited with status 255: Connection reset by peer',
+      'pipeline timed out after 600s',
+      'ssh exited with status 255: Broken pipe',
+      'ssh exited with status 255: invalid format' # broken identity file
+    ].each do |msg|
+      refute ZFSReplicate::Replicator.unresumable?(msg), "expected resumable: #{msg}"
+    end
+  end
+
   def test_resume_send_command
     assert_equal 'zfs send -t 1-abc', Replicator.resume_send_command(token: '1-abc')
   end

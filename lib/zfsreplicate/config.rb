@@ -93,7 +93,7 @@ module ZFSReplicate
       return nil unless hash.key?('bwlimit')
       value = hash.fetch('bwlimit')
       value = value.to_s if value.is_a?(Integer) && value.positive?
-      unless value.is_a?(String) && value.match?(/\A\d+[kKmMgG]?\z/)
+      unless value.is_a?(String) && value.match?(/\A[1-9]\d*[kKmMgG]?\z/)
         raise ConfigError,
               "'bwlimit' must be a rate like 50m or 800k (digits with an " \
               "optional k/M/G suffix), got #{hash.fetch('bwlimit').inspect}"

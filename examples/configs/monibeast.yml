@@ -27,6 +27,10 @@ replications:
   # zroot/home and tank/Git each fan out to several destinations, so those jobs
   # use distinct snapshot_prefix values: with a shared prefix the jobs would
   # prune each other's common bases once one destination fell behind.
+  # NOTE: on a host already running these jobs with the default prefix, the
+  # first run after this change is a full resend per destination (no common
+  # snapshot under the new prefix), and old zfsreplicate-* snapshots must be
+  # destroyed manually — see "Parallel execution" in the README.
   - name: local-home
     source:      { dataset: zroot/home }
     destination: { dataset: tank/localbackups/zroot/home }
