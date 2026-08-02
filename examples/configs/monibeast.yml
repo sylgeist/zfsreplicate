@@ -24,9 +24,13 @@ replications:
     force: true
     keep_snapshots: 30
 
+  # zroot/home and tank/Git each fan out to several destinations, so those jobs
+  # use distinct snapshot_prefix values: with a shared prefix the jobs would
+  # prune each other's common bases once one destination fell behind.
   - name: local-home
     source:      { dataset: zroot/home }
     destination: { dataset: tank/localbackups/zroot/home }
+    snapshot_prefix: zfsr-local
     recursive: true
     force: true
     keep_snapshots: 30
@@ -163,6 +167,7 @@ replications:
   - name: io-home                      # push
     source:      { dataset: zroot/home }
     destination: { host: io.risei.net, identity: /root/.ssh/replication, dataset: zroot/remotebackups/home }
+    snapshot_prefix: zfsr-io
     recursive: true
     force: true
     keep_snapshots: 30
@@ -171,6 +176,7 @@ replications:
   - name: io-git                       # push
     source:      { dataset: tank/Git }
     destination: { host: io.risei.net, identity: /root/.ssh/replication, dataset: zroot/remotebackups/Git }
+    snapshot_prefix: zfsr-io
     recursive: true
     force: true
     keep_snapshots: 30
@@ -196,6 +202,7 @@ replications:
   - name: rhea-home                    # push
     source:      { dataset: zroot/home }
     destination: { host: rhea.risei.net, identity: /root/.ssh/replication, dataset: tank/remotebackups/monibeast/home }
+    snapshot_prefix: zfsr-rhea
     recursive: true
     force: true
     keep_snapshots: 30
@@ -204,6 +211,7 @@ replications:
   - name: rhea-git                     # push
     source:      { dataset: tank/Git }
     destination: { host: rhea.risei.net, identity: /root/.ssh/replication, dataset: tank/remotebackups/monibeast/Git }
+    snapshot_prefix: zfsr-rhea
     recursive: true
     force: true
     keep_snapshots: 30
