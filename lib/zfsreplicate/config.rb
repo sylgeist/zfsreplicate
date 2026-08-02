@@ -2,6 +2,7 @@
 # lib/zfsreplicate/config.rb
 require 'yaml'
 require 'tmpdir'
+require_relative 'log'
 
 module ZFSReplicate
   class ConfigError < StandardError; end
@@ -20,7 +21,13 @@ module ZFSReplicate
   class Config
     DEFAULT_LOCK_DIR = File.join(Dir.tmpdir, 'zfsreplicate-locks')
 
-    attr_reader :replications, :concurrency, :lock_dir
+    TOP_LEVEL_KEYS = %w[replications concurrency lock_dir].freeze
+    REPLICATION_KEYS = %w[name source destination recursive keep_snapshots
+                          snapshot_prefix force resume max_retries retry_delay
+                          compressed_send bwlimit timeout].freeze
+    ENDPOINT_KEYS = %w[host user dataset port identity].freeze
+
+    attr_reader :replications, :concurrency, :lock_dir, :warnings
 
     def self.load(path)
       raise ConfigError, "Config file not found: #{path}" unless File.exist?(path)
@@ -30,19 +37,42 @@ module ZFSReplicate
     end
 
     def initialize(raw)
+      @warnings = []
       list = raw.fetch('replications')
       raise ConfigError, "'replications' must be a list" unless list.is_a?(Array)
+      warn_unknown_keys(raw, TOP_LEVEL_KEYS, 'top level')
       @replications = list.map { |r| parse_replication(r) }
+      reject_duplicate_names!
       @concurrency = parse_concurrency(raw, 'concurrency', 1)
       @lock_dir = raw.fetch('lock_dir', DEFAULT_LOCK_DIR)
     end
 
     private
 
+    # A typo'd key silently applying the default is an unattended-failure mode,
+    # so unrecognized keys are surfaced (but tolerated, for forward compat).
+    def warn_unknown_keys(hash, known, where)
+      (hash.keys.map(&:to_s) - known).each do |key|
+        message = "Unknown config key '#{key}' at #{where} (ignored)"
+        @warnings << message
+        ZFSReplicate.logger.warn(message)
+      end
+    end
+
+    # Duplicate names would share one lock file, so the second job silently
+    # reports `skipped` on every run.
+    def reject_duplicate_names!
+      dups = @replications.group_by(&:name).select { |_, jobs| jobs.length > 1 }.keys
+      return if dups.empty?
+      raise ConfigError, "Duplicate replication name(s): #{dups.join(', ')}"
+    end
+
     def parse_replication(r)
       raise ConfigError, "Each replication must be a mapping" unless r.is_a?(Hash)
+      name = require_key(r, 'name')
+      warn_unknown_keys(r, REPLICATION_KEYS, "replication '#{name}'")
       ReplicationConfig.new(
-        require_key(r, 'name'),
+        name,
         parse_endpoint(require_key(r, 'source'), 'source'),
         parse_endpoint(require_key(r, 'destination'), 'destination'),
         r.fetch('recursive', false),
@@ -60,6 +90,7 @@ module ZFSReplicate
 
     def parse_endpoint(e, role)
       raise ConfigError, "'#{role}' must be a mapping" unless e.is_a?(Hash)
+      warn_unknown_keys(e, ENDPOINT_KEYS, "'#{role}'")
       EndpointConfig.new(
         e['host'],
         e.fetch('user', 'root'),

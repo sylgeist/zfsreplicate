@@ -31,7 +31,7 @@ module ZFSReplicate
     end
 
     def snapshots
-      raw = @executor.run("zfs list -t snapshot -H -o name -s creation #{@name}")
+      raw = @executor.run("zfs list -t snapshot -d 1 -H -o name -s creation #{@name}")
       raw.lines.map(&:chomp).reject(&:empty?).map { |l| Snapshot.parse(l) }.sort
     end
 

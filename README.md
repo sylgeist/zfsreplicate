@@ -75,6 +75,10 @@ zfsreplicate -c /etc/zfsreplicate.yml list
 | `bwlimit` | no | *(none)* | Throttle transfer rate via a local `mbuffer -R` stage (e.g. `50m`, `1G`); requires `mbuffer` (`pkg install mbuffer`) on the host running zfsreplicate |
 | `timeout` | no | *(none)* | Kill a transfer attempt stuck longer than this many seconds and let retry/backoff take over; set with `max_retries: 0` for fail-fast |
 
+Job names must be unique (they key the per-job lock files), and unrecognized
+config keys are warned about at startup — a typo like `keep_snapshot:` is
+surfaced instead of silently applying the default.
+
 Top-level keys (siblings of `replications`):
 
 | Field | Required | Default | Description |
