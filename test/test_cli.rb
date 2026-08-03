@@ -94,6 +94,46 @@ class TestCLIParsing < Minitest::Test
      rep('local-home')]
   end
 
+  # Disabled jobs are benched, not deleted: excluded from every implicit
+  # selection (bare sync, globs, --host), but an exact name still runs them so
+  # a benched job can be tested without editing the config back and forth.
+  def test_select_jobs_excludes_disabled_from_implicit_selection
+    jobs = fleet
+    jobs[0].enabled = false # rhea-ca
+    assert_equal %w[rhea-git rhea-root io-git local-home],
+                 ZFSReplicate::CLI.select_jobs(jobs, names: [], host: nil).map(&:name)
+    assert_equal %w[rhea-git rhea-root],
+                 ZFSReplicate::CLI.select_jobs(jobs, names: ['rhea-*'], host: nil).map(&:name)
+    assert_equal %w[rhea-git rhea-root],
+                 ZFSReplicate::CLI.select_jobs(jobs, names: [], host: 'rhea.risei.net').map(&:name)
+  end
+
+  def test_select_jobs_exact_name_runs_a_disabled_job
+    jobs = fleet
+    jobs[0].enabled = false # rhea-ca
+    picked = ZFSReplicate::CLI.select_jobs(jobs, names: ['rhea-ca'], host: nil)
+    assert_equal ['rhea-ca'], picked.map(&:name)
+  end
+
+  def test_list_marks_disabled_jobs
+    Dir.mktmpdir do |dir|
+      cfg = File.join(dir, 'c.yml')
+      File.write(cfg, <<~YAML)
+        replications:
+          - name: benched
+            enabled: false
+            source: { dataset: tank/a }
+            destination: { dataset: backup/a }
+          - name: live
+            source: { dataset: tank/b }
+            destination: { dataset: backup/b }
+      YAML
+      out, = capture_io { ZFSReplicate::CLI.run(['-c', cfg, 'list']) }
+      assert_match(/benched:.*\(disabled\)/, out)
+      refute_match(/live:.*disabled/, out)
+    end
+  end
+
   def test_select_jobs_exact_name
     picked = ZFSReplicate::CLI.select_jobs(fleet, names: ['io-git'], host: nil)
     assert_equal ['io-git'], picked.map(&:name)

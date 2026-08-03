@@ -320,6 +320,25 @@ class TestConfig < Minitest::Test
     f.close
   end
 
+  def test_enabled_defaults_true
+    f = write_config(VALID_CONFIG)
+    assert_equal true, ZFSReplicate::Config.load(f.path).replications.first.enabled
+    f.close
+  end
+
+  def test_enabled_can_be_disabled
+    f = write_config(VALID_CONFIG + "    enabled: false\n")
+    assert_equal false, ZFSReplicate::Config.load(f.path).replications.first.enabled
+    f.close
+  end
+
+  def test_enabled_rejects_non_boolean
+    f = write_config(VALID_CONFIG + "    enabled: maybe\n")
+    err = assert_raises(ZFSReplicate::ConfigError) { ZFSReplicate::Config.load(f.path) }
+    assert_match(/enabled/, err.message)
+    f.close
+  end
+
   def test_no_warnings_for_fully_valid_config
     f = write_config(VALID_CONFIG)
     assert_empty ZFSReplicate::Config.load(f.path).warnings
