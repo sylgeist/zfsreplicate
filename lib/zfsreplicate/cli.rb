@@ -18,7 +18,8 @@ module ZFSReplicate
       Usage: zfsreplicate [options] <command> [args]
 
       Commands:
-        sync [name]         Run replication job(s). Omit name to run all.
+        sync [name ...]     Run replication job(s). Names may be globs
+                            (e.g. 'rhea-*'); omit to run all.
         list                List configured replications.
         help                Show this message.
 
@@ -27,6 +28,8 @@ module ZFSReplicate
         -v, --verbose       Verbose output
         -n, --dry-run       Print actions without executing
         -j, --concurrency N Run up to N jobs in parallel (default 1)
+            --host HOST     Only jobs whose source or destination endpoint
+                            matches HOST (glob allowed, e.g. '*.risei.net')
             --lock-dir DIR  Directory for per-job lock files (overrides config)
         -V, --version       Print version and exit
 
@@ -40,6 +43,7 @@ module ZFSReplicate
         o.on('-v', '--verbose')     { options[:verbose] = true }
         o.on('-n', '--dry-run')     { options[:dry_run] = true }
         o.on('-j', '--concurrency N', Integer) { |n| options[:concurrency] = n }
+        o.on('--host HOST')         { |h| options[:host] = h }
         o.on('--lock-dir DIR')      { |d| options[:lock_dir] = d }
         o.on('-V', '--version')     { puts "zfsreplicate #{VERSION}"; exit 0 }
       end
@@ -67,7 +71,7 @@ module ZFSReplicate
       when 'list'
         cmd_list(options)
       when 'sync'
-        cmd_sync(argv.first, options)
+        cmd_sync(argv, options)
       else
         warn "Unknown command: #{cmd}\n\n#{USAGE}"
         exit 2
@@ -97,12 +101,31 @@ module ZFSReplicate
       name.gsub(/[^A-Za-z0-9_.-]/, '_')
     end
 
-    def self.cmd_sync(name, options)
+    # Pick jobs by name globs (union) and/or an endpoint host glob (AND).
+    # No selectors selects everything.
+    def self.select_jobs(replications, names:, host:)
+      jobs = replications
+      unless names.empty?
+        jobs = jobs.select { |r| names.any? { |n| File.fnmatch(n, r.name) } }
+      end
+      if host
+        jobs = jobs.select do |r|
+          [r.source.host, r.destination.host].compact.any? { |h| File.fnmatch(host, h) }
+        end
+      end
+      jobs
+    end
+
+    def self.cmd_sync(names, options)
       cfg = Config.load(options[:config])
-      jobs = name ? cfg.replications.select { |r| r.name == name } : cfg.replications
+      jobs = select_jobs(cfg.replications, names: names, host: options[:host])
 
       if jobs.empty?
-        warn name ? "No replication named '#{name}'" : "No replications configured"
+        selector = [
+          (names.empty? ? nil : "name #{names.join(', ')}"),
+          (options[:host] ? "host #{options[:host]}" : nil)
+        ].compact.join(' and ')
+        warn selector.empty? ? "No replications configured" : "No replication matches #{selector}"
         exit 2
       end
 

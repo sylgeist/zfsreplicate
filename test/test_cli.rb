@@ -71,6 +71,88 @@ class TestCLIParsing < Minitest::Test
   # path that cannot be created (a directory under a regular file); without the
   # flag override, mkdir_p would fail and the run would exit 2. With the flag,
   # the run succeeds and the lock file lands in the flag's directory.
+  def rep(name, src_host: nil, dst_host: nil)
+    ZFSReplicate::ReplicationConfig.new(
+      name,
+      ZFSReplicate::EndpointConfig.new(src_host, 'root', "tank/#{name}", 22, nil),
+      ZFSReplicate::EndpointConfig.new(dst_host, 'root', "backup/#{name}", 22, nil),
+      false, 7, 'zfsreplicate', false, true, 3, 5, true, nil, nil
+    )
+  end
+
+  def fleet
+    [rep('rhea-ca', dst_host: 'rhea.risei.net'),
+     rep('rhea-git', dst_host: 'rhea.risei.net'),
+     rep('rhea-root', src_host: 'rhea.risei.net'),
+     rep('io-git', dst_host: 'io.risei.net'),
+     rep('local-home')]
+  end
+
+  def test_select_jobs_exact_name
+    picked = ZFSReplicate::CLI.select_jobs(fleet, names: ['io-git'], host: nil)
+    assert_equal ['io-git'], picked.map(&:name)
+  end
+
+  def test_select_jobs_glob
+    picked = ZFSReplicate::CLI.select_jobs(fleet, names: ['rhea-*'], host: nil)
+    assert_equal %w[rhea-ca rhea-git rhea-root], picked.map(&:name)
+  end
+
+  def test_select_jobs_multiple_names_union
+    picked = ZFSReplicate::CLI.select_jobs(fleet, names: %w[io-git local-home], host: nil)
+    assert_equal %w[io-git local-home], picked.map(&:name)
+  end
+
+  def test_select_jobs_by_host_matches_either_endpoint
+    picked = ZFSReplicate::CLI.select_jobs(fleet, names: [], host: 'rhea.risei.net')
+    assert_equal %w[rhea-ca rhea-git rhea-root], picked.map(&:name),
+                 'host filter must match source or destination endpoints'
+  end
+
+  def test_select_jobs_host_glob
+    picked = ZFSReplicate::CLI.select_jobs(fleet, names: [], host: '*.risei.net')
+    assert_equal %w[rhea-ca rhea-git rhea-root io-git], picked.map(&:name)
+  end
+
+  def test_select_jobs_names_and_host_intersect
+    picked = ZFSReplicate::CLI.select_jobs(fleet, names: ['*-git'], host: 'rhea.risei.net')
+    assert_equal ['rhea-git'], picked.map(&:name)
+  end
+
+  def test_sync_glob_dry_run_and_no_match_exit
+    Dir.mktmpdir do |dir|
+      cfg = File.join(dir, 'c.yml')
+      File.write(cfg, <<~YAML)
+        replications:
+          - name: rhea-ca
+            source: { dataset: tank/CA }
+            destination: { host: rhea.risei.net, dataset: backup/CA }
+          - name: io-git
+            source: { dataset: tank/Git }
+            destination: { host: io.risei.net, dataset: backup/Git }
+      YAML
+      out, = capture_io do
+        ZFSReplicate::CLI.run(['-c', cfg, '-n', 'sync', 'rhea-*'])
+      end
+      assert_includes out, 'tank/CA'
+      refute_includes out, 'tank/Git'
+
+      out, = capture_io do
+        ZFSReplicate::CLI.run(['-c', cfg, '-n', '--host', 'rhea.risei.net', 'sync'])
+      end
+      assert_includes out, 'tank/CA'
+      refute_includes out, 'tank/Git'
+
+      ex = nil
+      capture_io do
+        ex = assert_raises(SystemExit) do
+          ZFSReplicate::CLI.run(['-c', cfg, '-n', 'sync', 'nope-*'])
+        end
+      end
+      assert_equal 2, ex.status
+    end
+  end
+
   def test_lock_dir_flag_overrides_config
     Dir.mktmpdir do |dir|
       blocker = File.join(dir, 'blocker')
