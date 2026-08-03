@@ -44,6 +44,6 @@ touched — anything you snapshot by hand is left intact.
 
 - The first recursive send is a full stream; the destination subtree
   (`backup/tank`) must not already exist as populated datasets, or the job aborts
-  rather than overwrite it. Set `force: true` to opt into an overwriting
-  `zfs recv -F`.
+  rather than overwrite it. Opt into an overwriting `zfs recv -F` for one run
+  with `zfsreplicate --force sync <job>`.
 - Keep `keep_snapshots` modest for large recursive sets — it applies per dataset.
