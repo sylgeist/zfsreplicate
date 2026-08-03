@@ -87,7 +87,8 @@ module ZFSReplicate
       cfg.replications.each do |r|
         src = r.source.local? ? r.source.dataset : "#{r.source.user}@#{r.source.host}:#{r.source.dataset}"
         dst = r.destination.local? ? r.destination.dataset : "#{r.destination.user}@#{r.destination.host}:#{r.destination.dataset}"
-        puts "#{r.name}: #{src} \u2192 #{dst} (keep #{r.keep_snapshots})"
+        flag = r.enabled == false ? ' (disabled)' : ''
+        puts "#{r.name}: #{src} \u2192 #{dst} (keep #{r.keep_snapshots})#{flag}"
       end
     rescue ConfigError => e
       warn "Config error: #{e.message}"
@@ -106,7 +107,9 @@ module ZFSReplicate
     end
 
     # Pick jobs by name globs (union) and/or an endpoint host glob (AND).
-    # No selectors selects everything.
+    # No selectors selects everything. Disabled jobs (enabled: false) are
+    # excluded from every implicit selection but still run when a selector
+    # names them exactly — benched, not deleted.
     def self.select_jobs(replications, names:, host:)
       jobs = replications
       unless names.empty?
@@ -117,7 +120,7 @@ module ZFSReplicate
           [r.source.host, r.destination.host].compact.any? { |h| File.fnmatch(host, h) }
         end
       end
-      jobs
+      jobs.reject { |r| r.enabled == false && !names.include?(r.name) }
     end
 
     def self.cmd_sync(names, options)

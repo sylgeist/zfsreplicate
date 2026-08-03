@@ -73,6 +73,7 @@ zfsreplicate -c /etc/zfsreplicate.yml list
 | `compressed_send` | no | `true` | Send blocks in their on-disk compressed form (`zfs send -c`); set `false` if the receiver lacks the compression feature |
 | `bwlimit` | no | *(none)* | Throttle transfer rate via a local `mbuffer -R` stage (e.g. `50m`, `1G`); requires `mbuffer` (`pkg install mbuffer`) on the host running zfsreplicate |
 | `timeout` | no | *(none)* | Kill a transfer attempt stuck longer than this many seconds and let retry/backoff take over; set with `max_retries: 0` for fail-fast |
+| `enabled` | no | `true` | Set `false` to bench a job: it is excluded from `sync`, globs, and `--host`, but still runs when named exactly (`sync <name>`), and `list` marks it `(disabled)` |
 
 Job names must be unique (they key the per-job lock files), and unrecognized
 config keys are warned about at startup — a typo like `keep_snapshot:` is
@@ -172,6 +173,12 @@ Name selectors and `--host` combine as AND: `sync '*-git' --host rhea.risei.net`
 runs only git jobs touching rhea. Quote globs so the shell doesn't expand them.
 The selected set runs through the normal scheduler, so `-j` parallelism and the
 single end-of-run summary apply.
+
+Jobs with `enabled: false` are benched: excluded from a bare `sync`, from
+globs, and from `--host` — useful while migrating hosts incrementally (cron
+can run a plain `sync` from day one) or during maintenance on a target. An
+exact name still runs a benched job, so it can be tested without editing the
+config.
 
 See [`examples/`](examples/) for complete, copy-paste-ready configs and
 walkthroughs (local→remote, offsite-with-resume, recursive pool mirror, and more).

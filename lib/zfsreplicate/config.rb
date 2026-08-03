@@ -15,7 +15,8 @@ module ZFSReplicate
 
   ReplicationConfig = Struct.new(
     :name, :source, :destination, :recursive, :keep_snapshots, :snapshot_prefix,
-    :force, :resume, :max_retries, :retry_delay, :compressed_send, :bwlimit, :timeout
+    :force, :resume, :max_retries, :retry_delay, :compressed_send, :bwlimit, :timeout,
+    :enabled
   )
 
   class Config
@@ -24,7 +25,7 @@ module ZFSReplicate
     TOP_LEVEL_KEYS = %w[replications concurrency lock_dir].freeze
     REPLICATION_KEYS = %w[name source destination recursive keep_snapshots
                           snapshot_prefix force resume max_retries retry_delay
-                          compressed_send bwlimit timeout].freeze
+                          compressed_send bwlimit timeout enabled].freeze
     ENDPOINT_KEYS = %w[host user dataset port identity].freeze
 
     attr_reader :replications, :concurrency, :lock_dir, :warnings
@@ -91,7 +92,8 @@ module ZFSReplicate
         non_negative_int(r, 'retry_delay', 5),
         r.fetch('compressed_send', true),
         bwlimit_or_nil(r),
-        positive_int_or_nil(r, 'timeout')
+        positive_int_or_nil(r, 'timeout'),
+        boolean(r, 'enabled', true)
       )
     end
 
@@ -135,6 +137,15 @@ module ZFSReplicate
         raise ConfigError,
               "'bwlimit' must be a rate like 50m or 800k (digits with an " \
               "optional k/M/G suffix), got #{hash.fetch('bwlimit').inspect}"
+      end
+      value
+    end
+
+    def boolean(hash, key, default)
+      return default unless hash.key?(key)
+      value = hash.fetch(key)
+      unless [true, false].include?(value)
+        raise ConfigError, "'#{key}' must be true or false"
       end
       value
     end
