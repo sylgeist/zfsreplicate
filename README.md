@@ -198,7 +198,7 @@ Each `sync` run:
 1. Creates a new timestamped snapshot on the source dataset
 2. Lists managed snapshots on source and destination
 3. Finds the most recent common snapshot (by tag)
-4. Sends an **incremental** stream (`zfs send -I`) if a common snapshot exists, or a **full** stream if the destination is empty
+4. Sends an **incremental** stream (`zfs send -I`) if a common snapshot exists, or a **full** stream if the destination is empty. If the destination already holds the latest snapshot (possible with future-dated snapshots or clock skew, which also log a warning), the transfer is skipped with an INFO line and the run continues to pruning
 5. Verifies the destination now holds the latest snapshot (a resumed stream can
    cover only part of an incremental package; if the destination is still
    behind, the job fails with a re-run hint instead of pruning). For recursive
