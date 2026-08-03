@@ -120,8 +120,13 @@ replications:
     max_retries: 0
 
   # ===== Email (often offline -> fail fast) =====
-  - name: imap-mail
-    source:      { host: imap.risei.net, port: 1978, identity: /root/.ssh/replication, dataset: zroot/imap }
+  # Mailbox data is pulled from the physical host, not the imap.risei.net
+  # floating IP: replication lineage and SSH host keys are per-machine, so a
+  # failover flip would break both. If a second imap server appears, add its
+  # own imap02-mail job (enabled: false while standby) rather than following
+  # the floating IP.
+  - name: imap01-mail
+    source:      { host: imap01.risei.net, port: 1978, identity: /root/.ssh/replication, dataset: zroot/imap }
     destination: { dataset: tank/remotebackups/imap }
     recursive: true
     keep_snapshots: 30
