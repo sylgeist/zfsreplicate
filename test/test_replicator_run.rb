@@ -2,6 +2,7 @@
 # Integration tests for the full Replicator#run orchestration, using a recording
 # fake at the executor (I/O) boundary so no live ZFS is needed.
 require 'test_helper'
+require 'stringio'
 require 'zfsreplicate/snapshot'
 require 'zfsreplicate/executor'
 require 'zfsreplicate/dataset'
@@ -237,6 +238,41 @@ class TestReplicatorRun < Minitest::Test
     refute_empty dst_destroys
     assert dst_destroys.all? { |c| c =~ /\Azfs destroy -r backup\/vms@/ },
            "expected recursive destination destroys, got #{dst_destroys.inspect}"
+  end
+
+  # When the destination already holds the latest managed snapshot (reachable
+  # via a future-dated seed or clock skew), there is nothing to send — the run
+  # must skip the transfer instead of building a self-referential
+  # `zfs send -I X X`, and pruning still proceeds.
+  def test_skips_transfer_when_destination_already_at_latest
+    rep = build(
+      [[/zfs list -t snapshot/, SRC_THREE]],
+      [[/zfs list -t snapshot/, DST_THREE]],
+      replication(keep: 1)
+    )
+    capture_io { rep.run }
+    assert_empty @src.pipelines, "must not build a transfer when common == latest"
+    refute_empty @src.commands.grep(/zfs destroy/), "pruning still proceeds"
+    refute_empty @dst.commands.grep(/zfs destroy/), "destination pruning still proceeds"
+  end
+
+  # The snapshot this run just created should be the latest; when it is not,
+  # something is future-dated or a clock is skewed — say so.
+  def test_warns_when_new_snapshot_is_not_latest
+    rep = build(
+      [[/zfs list -t snapshot/, SRC_THREE]], # canned listing omits the new snapshot
+      [[/zfs list -t snapshot/, DST_THREE]],
+      replication
+    )
+    log_io = StringIO.new
+    original = ZFSReplicate.instance_variable_get(:@logger)
+    ZFSReplicate.instance_variable_set(:@logger, Logger.new(log_io))
+    begin
+      rep.run
+    ensure
+      ZFSReplicate.instance_variable_set(:@logger, original)
+    end
+    assert_match(/future-dated|clock/, log_io.string)
   end
 
   # A recursive receive applies child-by-child, and a child skipped at seed

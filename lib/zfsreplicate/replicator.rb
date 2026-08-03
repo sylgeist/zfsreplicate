@@ -135,6 +135,13 @@ module ZFSReplicate
       latest    = src_snaps.max
       common    = self.class.common_snapshot(src_snaps, dst_snaps)
 
+      if latest && latest.tag != tag
+        ZFSReplicate.logger.warn(
+          "Newly created snapshot #{tag} is not the latest managed snapshot " \
+          "(#{latest.tag}) — a future-dated snapshot or clock skew may be present"
+        )
+      end
+
       self.class.guard_full_send!(
         destination: @cfg.destination.dataset,
         common: common,
@@ -142,16 +149,23 @@ module ZFSReplicate
         force: @cfg.force
       )
 
-      fresh_send = self.class.send_command(latest: latest, common: common,
-                                           recursive: @cfg.recursive,
-                                           compressed: @cfg.compressed_send)
-      recv_fresh = self.class.recv_command(dataset: @cfg.destination.dataset,
-                                           fresh: true, resumable: @cfg.resume)
+      if common && common.tag == latest.tag
+        # Nothing to send — sending would build a self-referential `send -I X X`.
+        ZFSReplicate.logger.info(
+          "Destination #{@cfg.destination.dataset} is already at #{latest.tag}; skipping transfer"
+        )
+      else
+        fresh_send = self.class.send_command(latest: latest, common: common,
+                                             recursive: @cfg.recursive,
+                                             compressed: @cfg.compressed_send)
+        recv_fresh = self.class.recv_command(dataset: @cfg.destination.dataset,
+                                             fresh: true, resumable: @cfg.resume)
 
-      ZFSReplicate.logger.info("Sending #{latest.tag} (#{common ? 'incremental' : 'full'})")
-      perform_transfer(src_exec, dst_exec, dst_ds,
-                       fresh_send: fresh_send, recv_fresh: recv_fresh,
-                       recv_resume: recv_resume)
+        ZFSReplicate.logger.info("Sending #{latest.tag} (#{common ? 'incremental' : 'full'})")
+        perform_transfer(src_exec, dst_exec, dst_ds,
+                         fresh_send: fresh_send, recv_fresh: recv_fresh,
+                         recv_resume: recv_resume)
+      end
 
       # A resumed stream can cover only part of an incremental package while
       # the pipeline exits 0, leaving the destination behind `latest`. Pruning
