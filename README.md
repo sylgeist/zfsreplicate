@@ -128,7 +128,8 @@ Only snapshots matching the configured prefix are managed (created, compared, pr
 zfsreplicate [options] <command> [args]
 
 Commands:
-  sync [name]         Run replication job(s). Omit name to run all.
+  sync [name ...]     Run replication job(s). Names may be globs
+                      (e.g. 'rhea-*'); omit to run all.
   list                List configured replications.
   help                Show this message.
 
@@ -137,6 +138,8 @@ Options:
   -v, --verbose       Verbose output
   -n, --dry-run       Print actions without executing
   -j, --concurrency N Run up to N jobs in parallel (default 1)
+      --host HOST     Only jobs whose source or destination endpoint
+                      matches HOST (glob allowed, e.g. '*.risei.net')
       --lock-dir DIR  Directory for per-job lock files (overrides config lock_dir)
   -V, --version       Print version and exit
 ```
@@ -154,11 +157,20 @@ zfsreplicate list
 zfsreplicate sync
 ```
 
-### Run a specific replication
+### Run specific replications
 
 ```sh
-zfsreplicate sync vms-backup
+zfsreplicate sync vms-backup            # one job by exact name
+zfsreplicate sync 'rhea-*'              # every job whose name matches the glob
+zfsreplicate sync 'rhea-*' io-git       # several selectors (union)
+zfsreplicate --host rhea.risei.net sync # every job with that source or
+                                        # destination host (glob allowed)
 ```
+
+Name selectors and `--host` combine as AND: `sync '*-git' --host rhea.risei.net`
+runs only git jobs touching rhea. Quote globs so the shell doesn't expand them.
+The selected set runs through the normal scheduler, so `-j` parallelism and the
+single end-of-run summary apply.
 
 See [`examples/`](examples/) for complete, copy-paste-ready configs and
 walkthroughs (local→remote, offsite-with-resume, recursive pool mirror, and more).
