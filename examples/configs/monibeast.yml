@@ -144,10 +144,48 @@ replications:
     keep_snapshots: 30
     max_retries: 0
 
-  # NOTE: original source was "tank/Backups/" (trailing slash); treated as tank/Backups.
-  - name: io-backups                   # push
-    source:      { dataset: tank/Backups }
-    destination: { host: io.risei.net, identity: /root/.ssh/replication, dataset: zroot/remotebackups/monibeast/Backups }
+  # tank/Backups' children replicate individually, flat under monibeast/ —
+  # matching zxfer's old "tank/Backups/" trailing-slash spread and keeping io
+  # structured like rhea. NOTE: a NEW child created under tank/Backups needs
+  # its own job added here; nothing replicates the parent as a unit anymore.
+  - name: io-infra1                    # push
+    source:      { dataset: tank/Backups/infra1 }
+    destination: { host: io.risei.net, identity: /root/.ssh/replication, dataset: zroot/remotebackups/monibeast/infra1 }
+    recursive: true
+    keep_snapshots: 30
+    max_retries: 0
+
+  - name: io-infra2                    # push
+    source:      { dataset: tank/Backups/infra2 }
+    destination: { host: io.risei.net, identity: /root/.ssh/replication, dataset: zroot/remotebackups/monibeast/infra2 }
+    recursive: true
+    keep_snapshots: 30
+    max_retries: 0
+
+  - name: io-projects                  # push
+    source:      { dataset: tank/Backups/projects }
+    destination: { host: io.risei.net, identity: /root/.ssh/replication, dataset: zroot/remotebackups/monibeast/projects }
+    recursive: true
+    keep_snapshots: 30
+    max_retries: 0
+
+  - name: io-vault                     # push
+    source:      { dataset: tank/Backups/vault }
+    destination: { host: io.risei.net, identity: /root/.ssh/replication, dataset: zroot/remotebackups/monibeast/vault }
+    recursive: true
+    keep_snapshots: 30
+    max_retries: 0
+
+  - name: io-vpn                       # push
+    source:      { dataset: tank/Backups/vpn }
+    destination: { host: io.risei.net, identity: /root/.ssh/replication, dataset: zroot/remotebackups/monibeast/vpn }
+    recursive: true
+    keep_snapshots: 30
+    max_retries: 0
+
+  - name: io-www-ext                   # push
+    source:      { dataset: tank/Backups/www-ext }
+    destination: { host: io.risei.net, identity: /root/.ssh/replication, dataset: zroot/remotebackups/monibeast/www-ext }
     recursive: true
     keep_snapshots: 30
     max_retries: 0
