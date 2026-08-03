@@ -98,6 +98,22 @@ class TestDataset < Minitest::Test
     assert_raises(ZFSReplicate::ExecutorError) { ds.exists? }
   end
 
+  RECURSIVE_LIST = <<~OUTPUT
+    tank/vms@zfsreplicate-20260420-000000
+    tank/vms/child@zfsreplicate-20260420-000000
+    tank/vms/child@manual
+    tank/vms/child/grand@zfsreplicate-20260420-000000
+    tank/vms/other@zfsreplicate-20260410-000000
+  OUTPUT
+
+  def test_descendants_with_snapshot_returns_relative_paths
+    exec = MockExecutor.new(RECURSIVE_LIST)
+    ds = ZFSReplicate::Dataset.new('tank/vms', executor: exec)
+    got = ds.descendants_with_snapshot('zfsreplicate-20260420-000000')
+    assert_equal ['', 'child', 'child/grand'], got
+    assert_match(/zfs list -t snapshot -r -H -o name tank\/vms/, exec.last_cmd)
+  end
+
   def test_create_snapshot_plain_by_default
     @ds.create_snapshot('tag1')
     assert_equal 'zfs snapshot tank/vms@tag1', @exec.last_cmd

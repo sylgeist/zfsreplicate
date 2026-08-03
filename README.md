@@ -201,7 +201,12 @@ Each `sync` run:
 4. Sends an **incremental** stream (`zfs send -I`) if a common snapshot exists, or a **full** stream if the destination is empty
 5. Verifies the destination now holds the latest snapshot (a resumed stream can
    cover only part of an incremental package; if the destination is still
-   behind, the job fails with a re-run hint instead of pruning)
+   behind, the job fails with a re-run hint instead of pruning). For recursive
+   jobs this extends to the whole subtree: every child holding the latest
+   snapshot on the source must hold it on the destination too, so a child the
+   destination never received (e.g. a boot environment created after an
+   incremental seed) fails the job by name instead of surfacing runs later as
+   a cryptic `zfs recv` error
 6. Prunes old managed snapshots on both sides, keeping the most recent `keep_snapshots`
 
 If there is no common snapshot and the destination dataset **already exists**, the job aborts rather than overwriting it with a full `zfs recv -F`. To opt into the overwrite, re-run with the one-shot `--force` flag naming the jobs (`zfsreplicate --force sync 'rhea-*'`) — or `zfs destroy` the stale destination first. `--force` deliberately refuses to run without a job selection, so a forced run always says what it is forcing. A full send to a destination that does not yet exist is always allowed.

@@ -165,6 +165,22 @@ module ZFSReplicate
               "Re-run to catch up."
       end
 
+      # Recursive receives apply child-by-child, so the parent can look healthy
+      # while a child never arrived (e.g. a boot environment born after a seed
+      # snapshot). Compare which subtree members hold `latest` on each side.
+      if @cfg.recursive
+        missing = src_ds.descendants_with_snapshot(latest.tag) -
+                  dst_ds.descendants_with_snapshot(latest.tag)
+        unless missing.empty?
+          raise ExecutorError,
+                "Destination #{@cfg.destination.dataset} is missing child " \
+                "dataset(s) at #{latest.tag}: #{missing.join(', ')} — likely " \
+                "created on the source after the destination was seeded; " \
+                "send them manually (a clone-origin incremental is cheapest), " \
+                "then re-run. Skipping prune."
+        end
+      end
+
       prune_source = self.class.snapshots_to_prune(src_snaps, keep: @cfg.keep_snapshots)
       prune_source.each do |snap|
         ZFSReplicate.logger.info("Pruning source #{snap.tag}")
