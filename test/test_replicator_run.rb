@@ -239,6 +239,39 @@ class TestReplicatorRun < Minitest::Test
            "expected recursive destination destroys, got #{dst_destroys.inspect}"
   end
 
+  # A recursive receive applies child-by-child, and a child skipped at seed
+  # time (e.g. a boot environment born after the seed snapshot) leaves the
+  # parent looking healthy while the subtree is incomplete. Verify children
+  # before pruning and name the hole.
+  def test_recursive_verify_fails_when_destination_missing_a_child
+    src_r = SRC_THREE + "tank/vms/be1@zfsreplicate-20260420-000000\n"
+    rep = build(
+      [[/zfs list -t snapshot -r /, src_r],
+       [/zfs list -t snapshot -d 1 /, SRC_THREE]],
+      [[/zfs list -t snapshot -r /, DST_THREE], # no be1 on the destination
+       [/zfs list -t snapshot -d 1 /, [DST_TWO, DST_THREE]]],
+      replication(recursive: true, keep: 1)
+    )
+    err = assert_raises(ZFSReplicate::ExecutorError) { rep.run }
+    assert_match(/be1/, err.message)
+    assert_empty @src.commands.grep(/zfs destroy/), "must not prune source"
+    assert_empty @dst.commands.grep(/zfs destroy/), "must not prune destination"
+  end
+
+  def test_recursive_verify_passes_when_children_match
+    src_r = SRC_THREE + "tank/vms/be1@zfsreplicate-20260420-000000\n"
+    dst_r = DST_THREE + "backup/vms/be1@zfsreplicate-20260420-000000\n"
+    rep = build(
+      [[/zfs list -t snapshot -r /, src_r],
+       [/zfs list -t snapshot -d 1 /, SRC_THREE]],
+      [[/zfs list -t snapshot -r /, dst_r],
+       [/zfs list -t snapshot -d 1 /, [DST_TWO, DST_THREE]]],
+      replication(recursive: true, keep: 1)
+    )
+    rep.run
+    refute_empty @src.commands.grep(/zfs destroy/), "expected pruning after clean verify"
+  end
+
   def test_retries_then_succeeds_and_switches_to_resume
     rep = build(
       [[/zfs list -t snapshot/, SRC_THREE]],

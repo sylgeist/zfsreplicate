@@ -43,6 +43,19 @@ module ZFSReplicate
       managed_snapshots(prefix: prefix).max
     end
 
+    # Relative paths ('' for this dataset, 'child', 'child/grand') of every
+    # dataset in this subtree that holds a snapshot named tag. Used to verify
+    # a recursive transfer delivered the whole subtree.
+    def descendants_with_snapshot(tag)
+      raw = @executor.run("zfs list -t snapshot -r -H -o name #{@name}")
+      raw.lines.map(&:chomp).reject(&:empty?).filter_map do |line|
+        ds, snap = line.split('@', 2)
+        next unless snap == tag
+        next unless ds == @name || ds.start_with?("#{@name}/")
+        ds.delete_prefix(@name).delete_prefix('/')
+      end.uniq
+    end
+
     def create_snapshot(tag, recursive: false)
       @executor.run("zfs snapshot#{' -r' if recursive} #{@name}@#{tag}")
     end
