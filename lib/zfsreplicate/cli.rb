@@ -30,6 +30,8 @@ module ZFSReplicate
         -j, --concurrency N Run up to N jobs in parallel (default 1)
             --host HOST     Only jobs whose source or destination endpoint
                             matches HOST (glob allowed, e.g. '*.risei.net')
+            --force         Permit full-send overwrite of existing destinations
+                            for this run only (requires job names or --host)
             --lock-dir DIR  Directory for per-job lock files (overrides config)
         -V, --version       Print version and exit
 
@@ -44,6 +46,7 @@ module ZFSReplicate
         o.on('-n', '--dry-run')     { options[:dry_run] = true }
         o.on('-j', '--concurrency N', Integer) { |n| options[:concurrency] = n }
         o.on('--host HOST')         { |h| options[:host] = h }
+        o.on('--force')             { options[:force] = true }
         o.on('--lock-dir DIR')      { |d| options[:lock_dir] = d }
         o.on('-V', '--version')     { puts "zfsreplicate #{VERSION}"; exit 0 }
       end
@@ -117,8 +120,16 @@ module ZFSReplicate
     end
 
     def self.cmd_sync(names, options)
+      # A forced run must always say what it is forcing; with no selection it
+      # would arm the overwrite on every configured job in one keystroke.
+      if options[:force] && names.empty? && options[:host].nil?
+        warn '--force requires selecting jobs by name or --host'
+        exit 2
+      end
+
       cfg = Config.load(options[:config])
       jobs = select_jobs(cfg.replications, names: names, host: options[:host])
+      jobs = jobs.map { |r| r.dup.tap { |c| c.force = true } } if options[:force]
 
       if jobs.empty?
         selector = [
@@ -131,7 +142,8 @@ module ZFSReplicate
 
       if options[:dry_run]
         jobs.each do |rep|
-          puts "[dry-run] Would replicate #{rep.source.dataset} \u2192 #{rep.destination.dataset}"
+          forced = rep.force ? ' (forced)' : ''
+          puts "[dry-run] Would replicate #{rep.source.dataset} \u2192 #{rep.destination.dataset}#{forced}"
         end
         return
       end

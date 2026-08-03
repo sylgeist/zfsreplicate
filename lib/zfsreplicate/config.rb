@@ -71,6 +71,13 @@ module ZFSReplicate
       raise ConfigError, "Each replication must be a mapping" unless r.is_a?(Hash)
       name = require_key(r, 'name')
       warn_unknown_keys(r, REPLICATION_KEYS, "replication '#{name}'")
+      if r['force'] == true
+        message = "replication '#{name}' sets force: true permanently, " \
+                  "disarming the overwrite guard on every run; prefer the " \
+                  "one-shot --force CLI flag"
+        @warnings << message
+        ZFSReplicate.logger.warn(message)
+      end
       ReplicationConfig.new(
         name,
         parse_endpoint(require_key(r, 'source'), 'source'),
