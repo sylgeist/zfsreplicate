@@ -125,9 +125,15 @@ replications:
   # failover flip would break both. If a second imap server appears, add its
   # own imap02-mail job (enabled: false while standby) rather than following
   # the floating IP.
+  # zroot/imap/encrypted uses ZFS native encryption, and ZFS does not allow
+  # non-raw replication streams (-R) of encrypted datasets — so this job is
+  # raw: the destination stores ciphertext, and browsing/restoring requires
+  # `zfs load-key` with the mail key. ESCROW THAT KEY off imap01 (vault), or
+  # losing the host also loses the ability to read its backups.
   - name: imap01-mail
     source:      { host: imap01.risei.net, port: 1978, identity: /root/.ssh/replication, dataset: zroot/imap }
     destination: { dataset: tank/remotebackups/imap }
+    raw_send: true
     recursive: true
     keep_snapshots: 30
     max_retries: 0
