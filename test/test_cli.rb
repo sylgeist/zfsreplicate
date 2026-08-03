@@ -6,6 +6,12 @@ require 'zfsreplicate/replicator'
 require 'tmpdir'
 
 class TestCLIParsing < Minitest::Test
+  # FreeBSD convention for third-party tools: config under /usr/local/etc.
+  def test_default_config_is_freebsd_traditional
+    assert_equal '/usr/local/etc/zfsreplicate/config.yml',
+                 ZFSReplicate::CLI::DEFAULT_CONFIG
+  end
+
   def test_help_exits_zero
     ex = nil
     assert_output(/Usage:/) do

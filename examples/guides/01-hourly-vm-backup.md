@@ -24,7 +24,7 @@ ssh -o BatchMode=yes -i /root/.ssh/replicate_key root@192.168.1.20 echo ok
 ## 2. Write the config
 
 Copy [`../configs/local-to-remote.yml`](../configs/local-to-remote.yml) to
-`~/.config/zfsreplicate/config.yml` (or keep it anywhere and pass `-c`). Adjust
+`/usr/local/etc/zfsreplicate/config.yml` (or keep it anywhere and pass `-c`). Adjust
 the destination host, datasets, and `identity` path to match your setup.
 
 ## 3. Confirm what will run
