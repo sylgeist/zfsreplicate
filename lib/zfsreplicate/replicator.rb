@@ -15,10 +15,14 @@ module ZFSReplicate
       src_snaps.select { |s| dst_tags.include?(s.tag) }.max
     end
 
-    def self.send_command(latest:, common:, recursive:, compressed:)
+    # raw (-w) ships blocks exactly as stored — for encrypted datasets that
+    # means ciphertext, keys never leaving the source. -c is meaningless
+    # alongside -w (raw blocks are already compressed as on disk).
+    def self.send_command(latest:, common:, recursive:, compressed:, raw: false)
       flags = +''
       flags << ' -R' if recursive
-      flags << ' -c' if compressed
+      flags << ' -w' if raw
+      flags << ' -c' if compressed && !raw
       if common
         "zfs send#{flags} -I #{common.dataset}@#{common.tag} #{latest.dataset}@#{latest.tag}"
       else
@@ -157,7 +161,8 @@ module ZFSReplicate
       else
         fresh_send = self.class.send_command(latest: latest, common: common,
                                              recursive: @cfg.recursive,
-                                             compressed: @cfg.compressed_send)
+                                             compressed: @cfg.compressed_send,
+                                             raw: @cfg.raw_send)
         recv_fresh = self.class.recv_command(dataset: @cfg.destination.dataset,
                                              fresh: true, resumable: @cfg.resume)
 

@@ -73,6 +73,7 @@ zfsreplicate -c /etc/zfsreplicate.yml list
 | `compressed_send` | no | `true` | Send blocks in their on-disk compressed form (`zfs send -c`); set `false` if the receiver lacks the compression feature |
 | `bwlimit` | no | *(none)* | Throttle transfer rate via a local `mbuffer -R` stage (e.g. `50m`, `1G`); requires `mbuffer` (`pkg install mbuffer`) on the host running zfsreplicate |
 | `timeout` | no | *(none)* | Kill a transfer attempt stuck longer than this many seconds and let retry/backoff take over; set with `max_retries: 0` for fail-fast |
+| `raw_send` | no | `false` | Use raw streams (`zfs send -w`): blocks ship exactly as stored, so encrypted datasets stay ciphertext on the destination and keys never leave the source. See "Encrypted datasets" below |
 | `enabled` | no | `true` | Set `false` to bench a job: it is excluded from `sync`, globs, and `--host`, but still runs when named exactly (`sync <name>`), and `list` marks it `(disabled)` |
 
 Job names must be unique (they key the per-job lock files), and unrecognized
@@ -98,6 +99,24 @@ Two per-job settings tune how the stream is sent:
 - **`bwlimit`** caps throughput by piping the stream through `mbuffer -R` on the
   host running zfsreplicate (e.g. `bwlimit: 50m`). It requires `mbuffer`
   (`pkg install mbuffer`); without `bwlimit` set, `mbuffer` is not needed.
+
+## Encrypted datasets
+
+For sources using ZFS native encryption, choose per job:
+
+- **Default (non-raw):** the stream is sent decrypted (the source's key must be
+  loaded), and the destination stores **plaintext**. Restores are browsable
+  with no key ceremony, and backups never depend on a key surviving — at the
+  cost of the backup host holding cleartext.
+- **`raw_send: true`:** `zfs send -w` ships the on-disk ciphertext. The
+  destination can't read the data (and can't mount it without the key), keys
+  never leave the source — and the backup is only as durable as your key
+  escrow: lose the key, and the backups are unreadable too.
+
+Raw and non-raw streams cannot mix within one lineage: switching a job's
+`raw_send` requires destroying (or setting aside) the destination and
+re-bootstrapping. `compressed_send` is ignored when raw — raw blocks already
+travel exactly as stored (compressed, then encrypted).
 
 ## Timeouts and liveness
 
