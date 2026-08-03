@@ -320,6 +320,25 @@ class TestConfig < Minitest::Test
     f.close
   end
 
+  def test_raw_send_defaults_false
+    f = write_config(VALID_CONFIG)
+    assert_equal false, ZFSReplicate::Config.load(f.path).replications.first.raw_send
+    f.close
+  end
+
+  def test_raw_send_parses_true
+    f = write_config(VALID_CONFIG + "    raw_send: true\n")
+    assert_equal true, ZFSReplicate::Config.load(f.path).replications.first.raw_send
+    f.close
+  end
+
+  def test_raw_send_rejects_non_boolean
+    f = write_config(VALID_CONFIG + "    raw_send: sometimes\n")
+    err = assert_raises(ZFSReplicate::ConfigError) { ZFSReplicate::Config.load(f.path) }
+    assert_match(/raw_send/, err.message)
+    f.close
+  end
+
   def test_enabled_defaults_true
     f = write_config(VALID_CONFIG)
     assert_equal true, ZFSReplicate::Config.load(f.path).replications.first.enabled

@@ -71,11 +71,12 @@ end
 
 def replication(force: false, keep: 7, recursive: false,
                 resume: true, max_retries: 3, retry_delay: 5,
-                compressed_send: false, bwlimit: nil, timeout: nil)
+                compressed_send: false, bwlimit: nil, timeout: nil,
+                raw_send: false)
   ZFSReplicate::ReplicationConfig.new(
     'job', endpoint('tank/vms'), endpoint('backup/vms'),
     recursive, keep, 'zfsreplicate', force, resume, max_retries, retry_delay,
-    compressed_send, bwlimit, timeout
+    compressed_send, bwlimit, timeout, true, raw_send
   )
 end
 
@@ -392,6 +393,18 @@ class TestReplicatorRun < Minitest::Test
     assert_equal 1, @src.pipelines.length
     assert_equal 'zfs recv -F backup/vms', @src.pipelines[0][1]
     assert_empty @delays
+  end
+
+  def test_raw_send_flag_reaches_send_stage
+    rep = build(
+      [[/zfs list -t snapshot/, SRC_THREE]],
+      [[/zfs list -t snapshot/, DST_AFTER_FULL], [/zfs list -H -o name/, :raise]],
+      replication(raw_send: true, compressed_send: true)
+    )
+    rep.run
+    send_cmd = @src.pipelines.first[0]
+    assert_match(/\Azfs send -w /, send_cmd,
+                 "expected '-w' (and no '-c') in send stage, got: #{send_cmd.inspect}")
   end
 
   def test_compressed_send_flag_reaches_send_stage

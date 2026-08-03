@@ -80,6 +80,26 @@ end
 class TestReplicatorResumeCommands < Minitest::Test
   include ZFSReplicate
 
+  # Raw sends ship blocks exactly as stored (ciphertext for encrypted
+  # datasets); -c is meaningless alongside -w and must not be emitted.
+  def test_raw_full_send_uses_w_and_ignores_compressed
+    latest = ZFSReplicate::Snapshot.parse('tank/vms@zfsreplicate-20260420-000000')
+    cmd = ZFSReplicate::Replicator.send_command(latest: latest, common: nil,
+                                                recursive: false, compressed: true,
+                                                raw: true)
+    assert_equal 'zfs send -w tank/vms@zfsreplicate-20260420-000000', cmd
+  end
+
+  def test_raw_incremental_send_uses_w
+    latest = ZFSReplicate::Snapshot.parse('tank/vms@zfsreplicate-20260420-000000')
+    common = ZFSReplicate::Snapshot.parse('tank/vms@zfsreplicate-20260410-000000')
+    cmd = ZFSReplicate::Replicator.send_command(latest: latest, common: common,
+                                                recursive: true, compressed: false,
+                                                raw: true)
+    assert_equal 'zfs send -R -w -I tank/vms@zfsreplicate-20260410-000000 ' \
+                 'tank/vms@zfsreplicate-20260420-000000', cmd
+  end
+
   def test_unresumable_matches_zfs_resume_errors
     [
       'cannot resume send: resume token is corrupt',
