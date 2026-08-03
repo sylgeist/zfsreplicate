@@ -23,7 +23,7 @@ migrated from a `zxfer` + `zfs-auto-snapshot` setup: a 25-job local/remote
 backup hub running 3 jobs in parallel (`concurrency: 3`), mixing recursive
 local mirrors with remote OS/data pulls over non-default SSH ports. Its header
 documents the migration decisions (snapshot ownership, fail-fast on offline
-hosts, `force` on first overwrite). Useful as a reference for scaling beyond a
+hosts, one-shot `--force` for first overwrites). Useful as a reference for scaling beyond a
 handful of jobs.
 
 ## Trying an example

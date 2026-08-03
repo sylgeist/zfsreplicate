@@ -40,7 +40,6 @@ replications:
     recursive: false
     keep_snapshots: 14
     snapshot_prefix: zfsreplicate
-    force: false              # allow a full send to an existing destination
 ```
 
 Use a different config file with `-c`:
@@ -250,8 +249,8 @@ the only snapshot another destination has in common once it falls more than
 
 Changing `snapshot_prefix` on an already-deployed job starts a new snapshot
 lineage: the next run has no common snapshot under the new prefix, so it either
-trips the full-send guard or (with `force: true`) does a full resend that rolls
-the destination back. Old-prefix snapshots are no longer managed — destroy them
+trips the full-send guard or (if run with `--force`) does a full resend that
+rolls the destination back. Old-prefix snapshots are no longer managed — destroy them
 manually once the new lineage is established.
 
 Each job takes a per-job lock (`<lock_dir>/<job>.lock`) for the duration of its
