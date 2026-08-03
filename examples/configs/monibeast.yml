@@ -148,6 +148,7 @@ replications:
   # matching zxfer's old "tank/Backups/" trailing-slash spread and keeping io
   # structured like rhea. NOTE: a NEW child created under tank/Backups needs
   # its own job added here; nothing replicates the parent as a unit anymore.
+  # (io-projects below is NOT a Backups child — its source is tank/Projects.)
   - name: io-infra1                    # push
     source:      { dataset: tank/Backups/infra1 }
     destination: { host: io.risei.net, identity: /root/.ssh/replication, dataset: zroot/remotebackups/monibeast/infra1 }
@@ -162,9 +163,12 @@ replications:
     keep_snapshots: 30
     max_retries: 0
 
+  # tank/Projects fans out to rhea AND io: rhea-projects keeps the default
+  # prefix (already-established lineage), io gets its own.
   - name: io-projects                  # push
-    source:      { dataset: tank/Backups/projects }
+    source:      { dataset: tank/Projects }
     destination: { host: io.risei.net, identity: /root/.ssh/replication, dataset: zroot/remotebackups/monibeast/projects }
+    snapshot_prefix: zfsr-io
     recursive: true
     keep_snapshots: 30
     max_retries: 0
