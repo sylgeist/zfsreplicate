@@ -147,14 +147,14 @@ replications:
   # NOTE: original source was "tank/Backups/" (trailing slash); treated as tank/Backups.
   - name: io-backups                   # push
     source:      { dataset: tank/Backups }
-    destination: { host: io.risei.net, identity: /root/.ssh/replication, dataset: zroot/remotebackups/Backups }
+    destination: { host: io.risei.net, identity: /root/.ssh/replication, dataset: zroot/remotebackups/monibeast/Backups }
     recursive: true
     keep_snapshots: 30
     max_retries: 0
 
   - name: io-home                      # push
     source:      { dataset: zroot/home }
-    destination: { host: io.risei.net, identity: /root/.ssh/replication, dataset: zroot/remotebackups/home }
+    destination: { host: io.risei.net, identity: /root/.ssh/replication, dataset: zroot/remotebackups/monibeast/home }
     snapshot_prefix: zfsr-io
     recursive: true
     keep_snapshots: 30
@@ -162,7 +162,7 @@ replications:
 
   - name: io-git                       # push
     source:      { dataset: tank/Git }
-    destination: { host: io.risei.net, identity: /root/.ssh/replication, dataset: zroot/remotebackups/Git }
+    destination: { host: io.risei.net, identity: /root/.ssh/replication, dataset: zroot/remotebackups/monibeast/Git }
     snapshot_prefix: zfsr-io
     recursive: true
     keep_snapshots: 30
