@@ -12,7 +12,8 @@ require_relative 'version'
 
 module ZFSReplicate
   module CLI
-    DEFAULT_CONFIG = File.expand_path('~/.config/zfsreplicate/config.yml')
+    # FreeBSD convention for third-party tools: config under /usr/local/etc.
+    DEFAULT_CONFIG = '/usr/local/etc/zfsreplicate/config.yml'
 
     USAGE = <<~USAGE
       Usage: zfsreplicate [options] <command> [args]

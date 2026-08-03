@@ -23,7 +23,7 @@ ln -s /path/to/zfsreplicate/bin/zfsreplicate /usr/local/bin/zfsreplicate
 
 ## Configuration
 
-Create `~/.config/zfsreplicate/config.yml`:
+Create `/usr/local/etc/zfsreplicate/config.yml`:
 
 ```yaml
 replications:
@@ -134,7 +134,7 @@ Commands:
   help                Show this message.
 
 Options:
-  -c, --config FILE   Config file (default: ~/.config/zfsreplicate/config.yml)
+  -c, --config FILE   Config file (default: /usr/local/etc/zfsreplicate/config.yml)
   -v, --verbose       Verbose output
   -n, --dry-run       Print actions without executing
   -j, --concurrency N Run up to N jobs in parallel (default 1)
