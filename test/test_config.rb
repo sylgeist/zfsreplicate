@@ -310,6 +310,16 @@ class TestConfig < Minitest::Test
     f.close
   end
 
+  # A permanent force: true silently disarms the overwrite guard on every run;
+  # nudge toward the one-shot --force CLI flag.
+  def test_warns_on_permanent_force
+    f = write_config(VALID_CONFIG + "    force: true\n")
+    cfg = ZFSReplicate::Config.load(f.path)
+    assert cfg.warnings.any? { |w| w =~ /force/ && w =~ /vms-backup/ },
+           "expected a force warning naming the job, got #{cfg.warnings.inspect}"
+    f.close
+  end
+
   def test_no_warnings_for_fully_valid_config
     f = write_config(VALID_CONFIG)
     assert_empty ZFSReplicate::Config.load(f.path).warnings

@@ -3,7 +3,9 @@
 # Decisions baked in:
 #   - zfsreplicate owns snapshots (zfs-auto-snapshot + zfs-cleanup-snapshots retired)
 #   - offline hosts fail fast (max_retries: 0) instead of retrying with backoff
-#   - force: true to overwrite the pre-existing zxfer destinations on first run
+#   - no force: in config — the overwrite guard stays armed. For the first run
+#     after migrating a host (pre-existing zxfer destinations), force that run
+#     explicitly, e.g.:  zfsreplicate --host rhea.risei.net --force sync
 #
 # Recommended cron (daily, mirrors the old daily-30 retention):
 #   0 1 * * *  root  timeout 8h /usr/local/bin/zfsreplicate sync >> /var/log/zfsreplicate.log 2>&1
@@ -21,7 +23,6 @@ replications:
     source:      { dataset: zroot/ROOT }
     destination: { dataset: tank/localbackups/zroot/ROOT }
     recursive: true
-    force: true
     keep_snapshots: 30
 
   # zroot/home and tank/Git each fan out to several destinations, so those jobs
@@ -36,28 +37,24 @@ replications:
     destination: { dataset: tank/localbackups/zroot/home }
     snapshot_prefix: zfsr-local
     recursive: true
-    force: true
     keep_snapshots: 30
 
   - name: local-bhyve
     source:      { dataset: zroot/bhyve }
     destination: { dataset: tank/localbackups/bhyve }
     recursive: true
-    force: true
     keep_snapshots: 30
 
   - name: local-jails
     source:      { dataset: zroot/jails }
     destination: { dataset: tank/localbackups/jails }
     recursive: true
-    force: true
     keep_snapshots: 30
 
   - name: local-sendrecv
     source:      { dataset: zroot/sendrecv.io }
     destination: { dataset: tank/localbackups/sendrecv.io }
     recursive: true
-    force: true
     keep_snapshots: 30
 
   # ===== Remote OS backups, port 1978 (always run) =====
@@ -65,21 +62,18 @@ replications:
     source:      { host: imap01.risei.net, port: 1978, identity: /root/.ssh/replication, dataset: zroot/ROOT }
     destination: { dataset: tank/remotebackups/imap01/ROOT }
     recursive: true
-    force: true
     keep_snapshots: 30
 
   - name: mail03-root
     source:      { host: mail03.risei.net, port: 1978, identity: /root/.ssh/replication, dataset: zroot/ROOT }
     destination: { dataset: tank/remotebackups/mail03/ROOT }
     recursive: true
-    force: true
     keep_snapshots: 30
 
   - name: mail04-root
     source:      { host: mail04.risei.net, port: 1978, identity: /root/.ssh/replication, dataset: zroot/ROOT }
     destination: { dataset: tank/remotebackups/mail04/ROOT }
     recursive: true
-    force: true
     keep_snapshots: 30
 
   # ===== Mini cluster (often offline -> fail fast) =====
@@ -87,7 +81,6 @@ replications:
     source:      { host: mini1.risei.net, identity: /root/.ssh/replication, dataset: zroot/ROOT }
     destination: { dataset: tank/remotebackups/mini1/ROOT }
     recursive: true
-    force: true
     keep_snapshots: 30
     max_retries: 0
 
@@ -95,7 +88,6 @@ replications:
     source:      { host: mini1.risei.net, identity: /root/.ssh/replication, dataset: zroot/bhyve }
     destination: { dataset: tank/remotebackups/mini1/bhyve }
     recursive: true
-    force: true
     keep_snapshots: 30
     max_retries: 0
 
@@ -103,7 +95,6 @@ replications:
     source:      { host: mini2.risei.net, identity: /root/.ssh/replication, dataset: zroot/ROOT }
     destination: { dataset: tank/remotebackups/mini2/ROOT }
     recursive: true
-    force: true
     keep_snapshots: 30
     max_retries: 0
 
@@ -111,7 +102,6 @@ replications:
     source:      { host: mini2.risei.net, identity: /root/.ssh/replication, dataset: zroot/bhyve }
     destination: { dataset: tank/remotebackups/mini2/bhyve }
     recursive: true
-    force: true
     keep_snapshots: 30
     max_retries: 0
 
@@ -119,7 +109,6 @@ replications:
     source:      { host: mini3.risei.net, identity: /root/.ssh/replication, dataset: zroot/ROOT }
     destination: { dataset: tank/remotebackups/mini3/ROOT }
     recursive: true
-    force: true
     keep_snapshots: 30
     max_retries: 0
 
@@ -127,7 +116,6 @@ replications:
     source:      { host: mini3.risei.net, identity: /root/.ssh/replication, dataset: zroot/bhyve }
     destination: { dataset: tank/remotebackups/mini3/bhyve }
     recursive: true
-    force: true
     keep_snapshots: 30
     max_retries: 0
 
@@ -136,7 +124,6 @@ replications:
     source:      { host: imap.risei.net, port: 1978, identity: /root/.ssh/replication, dataset: zroot/imap }
     destination: { dataset: tank/remotebackups/imap }
     recursive: true
-    force: true
     keep_snapshots: 30
     max_retries: 0
 
@@ -146,7 +133,6 @@ replications:
     source:      { host: imap01.risei.net, port: 1978, identity: /root/.ssh/replication, dataset: zroot/jails }
     destination: { dataset: tank/remotebackups/imap01/jails }
     recursive: true
-    force: true
     keep_snapshots: 30
     max_retries: 0
 
@@ -155,7 +141,6 @@ replications:
     source:      { host: io.risei.net, identity: /root/.ssh/replication, dataset: zroot/ROOT }
     destination: { dataset: tank/remotebackups/io/ROOT }
     recursive: true
-    force: true
     keep_snapshots: 30
     max_retries: 0
 
@@ -164,7 +149,6 @@ replications:
     source:      { dataset: tank/Backups }
     destination: { host: io.risei.net, identity: /root/.ssh/replication, dataset: zroot/remotebackups/Backups }
     recursive: true
-    force: true
     keep_snapshots: 30
     max_retries: 0
 
@@ -173,7 +157,6 @@ replications:
     destination: { host: io.risei.net, identity: /root/.ssh/replication, dataset: zroot/remotebackups/home }
     snapshot_prefix: zfsr-io
     recursive: true
-    force: true
     keep_snapshots: 30
     max_retries: 0
 
@@ -182,7 +165,6 @@ replications:
     destination: { host: io.risei.net, identity: /root/.ssh/replication, dataset: zroot/remotebackups/Git }
     snapshot_prefix: zfsr-io
     recursive: true
-    force: true
     keep_snapshots: 30
     max_retries: 0
 
@@ -191,7 +173,6 @@ replications:
     source:      { host: rhea.risei.net, identity: /root/.ssh/replication, dataset: zroot/ROOT }
     destination: { dataset: tank/remotebackups/rhea/ROOT }
     recursive: true
-    force: true
     keep_snapshots: 30
     max_retries: 0
 
@@ -199,7 +180,6 @@ replications:
     source:      { dataset: tank/Projects }
     destination: { host: rhea.risei.net, identity: /root/.ssh/replication, dataset: tank/remotebackups/monibeast/Projects }
     recursive: true
-    force: true
     keep_snapshots: 30
     max_retries: 0
 
@@ -208,7 +188,6 @@ replications:
     destination: { host: rhea.risei.net, identity: /root/.ssh/replication, dataset: tank/remotebackups/monibeast/home }
     snapshot_prefix: zfsr-rhea
     recursive: true
-    force: true
     keep_snapshots: 30
     max_retries: 0
 
@@ -217,7 +196,6 @@ replications:
     destination: { host: rhea.risei.net, identity: /root/.ssh/replication, dataset: tank/remotebackups/monibeast/Git }
     snapshot_prefix: zfsr-rhea
     recursive: true
-    force: true
     keep_snapshots: 30
     max_retries: 0
 
@@ -225,6 +203,5 @@ replications:
     source:      { dataset: tank/CA }
     destination: { host: rhea.risei.net, identity: /root/.ssh/replication, dataset: tank/remotebackups/monibeast/CA }
     recursive: true
-    force: true
     keep_snapshots: 30
     max_retries: 0

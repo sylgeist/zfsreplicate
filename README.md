@@ -67,7 +67,7 @@ zfsreplicate -c /etc/zfsreplicate.yml list
 | `recursive` | no | `false` | Replicate the dataset and all its children: snapshots are created/destroyed with `-r` and sent with `zfs send -R`, so retention applies to the whole subtree |
 | `keep_snapshots` | no | `7` | Number of managed snapshots to retain on each side (minimum `1`) |
 | `snapshot_prefix` | no | `zfsreplicate` | Prefix for auto-created snapshot names |
-| `force` | no | `false` | Permit a full `zfs recv -F` to a destination that already exists but shares no snapshot (overwrites it) |
+| `force` | no | `false` | Permanently permit a full `zfs recv -F` to a destination that already exists but shares no snapshot (overwrites it). Prefer the one-shot `--force` CLI flag — this key disarms the guard on every run and is warned about at startup |
 | `resume` | no | `true` | Use `zfs recv -s` and retry/resume interrupted transfers |
 | `max_retries` | no | `3` | Retries after the first attempt (≤ 4 tries total) |
 | `retry_delay` | no | `5` | Base seconds for exponential backoff (5s, 10s, 20s…) |
@@ -140,6 +140,8 @@ Options:
   -j, --concurrency N Run up to N jobs in parallel (default 1)
       --host HOST     Only jobs whose source or destination endpoint
                       matches HOST (glob allowed, e.g. '*.risei.net')
+      --force         Permit full-send overwrite of existing destinations
+                      for this run only (requires job names or --host)
       --lock-dir DIR  Directory for per-job lock files (overrides config lock_dir)
   -V, --version       Print version and exit
 ```
@@ -203,7 +205,7 @@ Each `sync` run:
    behind, the job fails with a re-run hint instead of pruning)
 6. Prunes old managed snapshots on both sides, keeping the most recent `keep_snapshots`
 
-If there is no common snapshot and the destination dataset **already exists**, the job aborts rather than overwriting it with a full `zfs recv -F` — this requires manual intervention (e.g. `zfs destroy` the stale destination before re-running) or setting `force: true` to opt into the overwrite. A full send to a destination that does not yet exist is always allowed.
+If there is no common snapshot and the destination dataset **already exists**, the job aborts rather than overwriting it with a full `zfs recv -F`. To opt into the overwrite, re-run with the one-shot `--force` flag naming the jobs (`zfsreplicate --force sync 'rhea-*'`) — or `zfs destroy` the stale destination first. `--force` deliberately refuses to run without a job selection, so a forced run always says what it is forcing. A full send to a destination that does not yet exist is always allowed.
 
 When **both** endpoints are remote, the stream is relayed through the host running `zfsreplicate` (source → here → destination) rather than sent host-to-host; run the tool on one of the two nodes to avoid the extra hop.
 

@@ -119,6 +119,37 @@ class TestCLIParsing < Minitest::Test
     assert_equal ['rhea-git'], picked.map(&:name)
   end
 
+  # --force must always say what it is forcing: with no selection it would arm
+  # the overwrite on every configured job at once.
+  def test_force_without_selection_exits_two
+    ex = nil
+    assert_output(nil, /--force requires/) do
+      ex = assert_raises(SystemExit) { ZFSReplicate::CLI.run(['--force', 'sync']) }
+    end
+    assert_equal 2, ex.status
+  end
+
+  def test_force_applies_only_to_selected_jobs_for_this_run
+    Dir.mktmpdir do |dir|
+      cfg = File.join(dir, 'c.yml')
+      File.write(cfg, <<~YAML)
+        replications:
+          - name: rhea-ca
+            source: { dataset: tank/CA }
+            destination: { host: rhea.risei.net, dataset: backup/CA }
+      YAML
+      out, = capture_io do
+        ZFSReplicate::CLI.run(['-c', cfg, '-n', '--force', 'sync', 'rhea-*'])
+      end
+      assert_includes out, '(forced)'
+      # A plain run of the same config is not forced — the flag is one-shot.
+      out, = capture_io do
+        ZFSReplicate::CLI.run(['-c', cfg, '-n', 'sync', 'rhea-*'])
+      end
+      refute_includes out, '(forced)'
+    end
+  end
+
   def test_sync_glob_dry_run_and_no_match_exit
     Dir.mktmpdir do |dir|
       cfg = File.join(dir, 'c.yml')
