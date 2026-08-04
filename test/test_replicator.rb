@@ -129,17 +129,17 @@ class TestReplicatorResumeCommands < Minitest::Test
   end
 
   def test_recv_command_fresh_resumable
-    assert_equal 'zfs recv -F -s backup/vms',
+    assert_equal 'zfs recv -u -F -s -x mountpoint backup/vms',
                  Replicator.recv_command(dataset: 'backup/vms', fresh: true, resumable: true)
   end
 
   def test_recv_command_fresh_not_resumable
-    assert_equal 'zfs recv -F backup/vms',
+    assert_equal 'zfs recv -u -F -x mountpoint backup/vms',
                  Replicator.recv_command(dataset: 'backup/vms', fresh: true, resumable: false)
   end
 
   def test_recv_command_resume_continuation
-    assert_equal 'zfs recv -s backup/vms',
+    assert_equal 'zfs recv -u -s -x mountpoint backup/vms',
                  Replicator.recv_command(dataset: 'backup/vms', fresh: false, resumable: true)
   end
 end

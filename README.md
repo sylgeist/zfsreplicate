@@ -239,6 +239,16 @@ If there is no common snapshot and the destination dataset **already exists**, t
 
 When **both** endpoints are remote, the stream is relayed through the host running `zfsreplicate` (source → here → destination) rather than sent host-to-host; run the tool on one of the two nodes to avoid the extra hop.
 
+**Received datasets never mount.** Replication streams carry the source's
+`mountpoint` property, which would otherwise mount backup copies over the live
+filesystems they were taken from (`/home`, jail data, ...). Receives therefore
+always run with `-u -x mountpoint`: nothing mounts on arrival, and every
+received dataset — including children that appear in future streams — inherits
+its mountpoint from the destination parent (typically `none` in a backup
+tree). To browse or restore from a backup, set a mountpoint explicitly, e.g.
+`zfs set mountpoint=/mnt/restore tank/backups/foo && zfs mount tank/backups/foo`,
+and `zfs inherit mountpoint` it afterwards.
+
 ## Resumable transfers
 
 By default each transfer uses `zfs recv -s`, so an interrupted `zfs send | zfs
