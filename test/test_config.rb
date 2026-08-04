@@ -320,6 +320,25 @@ class TestConfig < Minitest::Test
     f.close
   end
 
+  def test_create_snapshot_defaults_true
+    f = write_config(VALID_CONFIG)
+    assert_equal true, ZFSReplicate::Config.load(f.path).replications.first.create_snapshot
+    f.close
+  end
+
+  def test_create_snapshot_can_be_disabled
+    f = write_config(VALID_CONFIG + "    create_snapshot: false\n")
+    assert_equal false, ZFSReplicate::Config.load(f.path).replications.first.create_snapshot
+    f.close
+  end
+
+  def test_create_snapshot_rejects_non_boolean
+    f = write_config(VALID_CONFIG + "    create_snapshot: hourly\n")
+    err = assert_raises(ZFSReplicate::ConfigError) { ZFSReplicate::Config.load(f.path) }
+    assert_match(/create_snapshot/, err.message)
+    f.close
+  end
+
   def test_raw_send_defaults_false
     f = write_config(VALID_CONFIG)
     assert_equal false, ZFSReplicate::Config.load(f.path).replications.first.raw_send

@@ -16,7 +16,7 @@ module ZFSReplicate
   ReplicationConfig = Struct.new(
     :name, :source, :destination, :recursive, :keep_snapshots, :snapshot_prefix,
     :force, :resume, :max_retries, :retry_delay, :compressed_send, :bwlimit, :timeout,
-    :enabled, :raw_send
+    :enabled, :raw_send, :create_snapshot
   )
 
   class Config
@@ -25,7 +25,8 @@ module ZFSReplicate
     TOP_LEVEL_KEYS = %w[replications concurrency lock_dir].freeze
     REPLICATION_KEYS = %w[name source destination recursive keep_snapshots
                           snapshot_prefix force resume max_retries retry_delay
-                          compressed_send bwlimit timeout enabled raw_send].freeze
+                          compressed_send bwlimit timeout enabled raw_send
+                          create_snapshot].freeze
     ENDPOINT_KEYS = %w[host user dataset port identity].freeze
 
     attr_reader :replications, :concurrency, :lock_dir, :warnings
@@ -94,7 +95,8 @@ module ZFSReplicate
         bwlimit_or_nil(r),
         positive_int_or_nil(r, 'timeout'),
         boolean(r, 'enabled', true),
-        boolean(r, 'raw_send', false)
+        boolean(r, 'raw_send', false),
+        boolean(r, 'create_snapshot', true)
       )
     end
 

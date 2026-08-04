@@ -76,13 +76,17 @@ replications:
     recursive: true
     keep_snapshots: 30
 
-  # ===== Mini cluster (often offline -> fail fast) =====
+  # ===== Mini cluster (offline, possibly permanently -> benched) =====
+  # enabled: false keeps the jobs defined without cron failures; run one by
+  # exact name (zfsreplicate sync mini1-root) to test when a node returns.
+  # Existing destination data remains as the final archive meanwhile.
   - name: mini1-root
     source:      { host: mini1.risei.net, identity: /root/.ssh/replication, dataset: zroot/ROOT }
     destination: { dataset: tank/remotebackups/mini1/ROOT }
     recursive: true
     keep_snapshots: 30
     max_retries: 0
+    enabled: false
 
   - name: mini1-bhyve
     source:      { host: mini1.risei.net, identity: /root/.ssh/replication, dataset: zroot/bhyve }
@@ -90,6 +94,7 @@ replications:
     recursive: true
     keep_snapshots: 30
     max_retries: 0
+    enabled: false
 
   - name: mini2-root
     source:      { host: mini2.risei.net, identity: /root/.ssh/replication, dataset: zroot/ROOT }
@@ -97,6 +102,7 @@ replications:
     recursive: true
     keep_snapshots: 30
     max_retries: 0
+    enabled: false
 
   - name: mini2-bhyve
     source:      { host: mini2.risei.net, identity: /root/.ssh/replication, dataset: zroot/bhyve }
@@ -104,6 +110,7 @@ replications:
     recursive: true
     keep_snapshots: 30
     max_retries: 0
+    enabled: false
 
   - name: mini3-root
     source:      { host: mini3.risei.net, identity: /root/.ssh/replication, dataset: zroot/ROOT }
@@ -111,6 +118,7 @@ replications:
     recursive: true
     keep_snapshots: 30
     max_retries: 0
+    enabled: false
 
   - name: mini3-bhyve
     source:      { host: mini3.risei.net, identity: /root/.ssh/replication, dataset: zroot/bhyve }
@@ -118,6 +126,7 @@ replications:
     recursive: true
     keep_snapshots: 30
     max_retries: 0
+    enabled: false
 
   # ===== Email (often offline -> fail fast) =====
   # Mailbox data is pulled from the physical host, not the imap.risei.net
@@ -267,4 +276,29 @@ replications:
     destination: { host: rhea.risei.net, identity: /root/.ssh/replication, dataset: tank/remotebackups/monibeast/CA }
     recursive: true
     keep_snapshots: 30
+    max_retries: 0
+
+  # ===== Mail cascades: re-ship monibeast's raw imap replica offsite =====
+  # A -> hub -> B,C: imap01 is touched once per hour by imap01-mail; these
+  # jobs forward the hub's replica. create_snapshot: false because the source
+  # is a recv target — the inbound recv -F would destroy locally-created
+  # snapshots; the whole chain shares imap01-mail's zfsreplicate-* lineage.
+  # Schedule after the inbound hourly, e.g.:
+  #   30 * * * *  root  /usr/local/bin/zfsreplicate sync 'imap-cascade-*'
+  - name: imap-cascade-rhea
+    source:      { dataset: tank/remotebackups/imap }
+    destination: { host: rhea.risei.net, identity: /root/.ssh/replication, dataset: tank/remotebackups/imap }
+    create_snapshot: false
+    raw_send: true
+    recursive: true
+    keep_snapshots: 168
+    max_retries: 0
+
+  - name: imap-cascade-io
+    source:      { dataset: tank/remotebackups/imap }
+    destination: { host: io.risei.net, identity: /root/.ssh/replication, dataset: zroot/remotebackups/imap }
+    create_snapshot: false
+    raw_send: true
+    recursive: true
+    keep_snapshots: 168
     max_retries: 0
