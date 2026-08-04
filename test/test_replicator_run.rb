@@ -72,11 +72,11 @@ end
 def replication(force: false, keep: 7, recursive: false,
                 resume: true, max_retries: 3, retry_delay: 5,
                 compressed_send: false, bwlimit: nil, timeout: nil,
-                raw_send: false)
+                raw_send: false, create_snapshot: true)
   ZFSReplicate::ReplicationConfig.new(
     'job', endpoint('tank/vms'), endpoint('backup/vms'),
     recursive, keep, 'zfsreplicate', force, resume, max_retries, retry_delay,
-    compressed_send, bwlimit, timeout, true, raw_send
+    compressed_send, bwlimit, timeout, true, raw_send, create_snapshot
   )
 end
 
@@ -217,6 +217,38 @@ class TestReplicatorRun < Minitest::Test
     # destination has 3 managed after the transfer, keep 1 => destroy 2 oldest
     dst_destroys = @dst.commands.grep(/zfs destroy/)
     assert_equal 2, dst_destroys.length
+  end
+
+  # Cascade jobs re-ship a replica whose snapshots are owned by the upstream
+  # job (the source is a recv target; inbound recv -F destroys any snapshot
+  # the upstream sender lacks). They must neither create nor prune on the
+  # source — only ship the newest existing managed snapshot.
+  def test_cascade_ships_existing_latest_without_touching_source
+    rep = build(
+      [[/zfs list -t snapshot/, SRC_THREE]],
+      [[/zfs list -t snapshot/, [DST_TWO, DST_THREE]]],
+      replication(create_snapshot: false, keep: 1)
+    )
+    rep.run
+    assert_empty @src.commands.grep(/zfs snapshot/), "must not snapshot the source"
+    assert_empty @src.commands.grep(/zfs destroy/), "must not prune the source"
+    send_cmd, = @src.pipelines.first
+    assert_equal(
+      'zfs send -I tank/vms@zfsreplicate-20260410-000000 tank/vms@zfsreplicate-20260420-000000',
+      send_cmd
+    )
+    refute_empty @dst.commands.grep(/zfs destroy/), "destination pruning still applies"
+  end
+
+  def test_cascade_with_no_managed_source_snapshots_fails_helpfully
+    rep = build(
+      [[/zfs list -t snapshot/, ""]],
+      [[/zfs list -t snapshot/, ""]],
+      replication(create_snapshot: false)
+    )
+    err = assert_raises(ZFSReplicate::ExecutorError) { rep.run }
+    assert_match(/no managed snapshots/i, err.message)
+    assert_match(/upstream/, err.message)
   end
 
   # `zfs send -R` only replicates children whose snapshots exist, so a

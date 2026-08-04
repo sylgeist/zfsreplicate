@@ -73,6 +73,7 @@ zfsreplicate -c /etc/zfsreplicate.yml list
 | `compressed_send` | no | `true` | Send blocks in their on-disk compressed form (`zfs send -c`); set `false` if the receiver lacks the compression feature |
 | `bwlimit` | no | *(none)* | Throttle transfer rate via a local `mbuffer -R` stage (e.g. `50m`, `1G`); requires `mbuffer` (`pkg install mbuffer`) on the host running zfsreplicate |
 | `timeout` | no | *(none)* | Kill a transfer attempt stuck longer than this many seconds and let retry/backoff take over; set with `max_retries: 0` for fail-fast |
+| `create_snapshot` | no | `true` | Set `false` for cascade jobs that re-ship a replica: the job neither creates nor prunes snapshots on the source (the upstream job owns that lineage) and sends the newest existing managed snapshot. See "Cascading replicas" below |
 | `raw_send` | no | `false` | Use raw streams (`zfs send -w`): blocks ship exactly as stored, so encrypted datasets stay ciphertext on the destination and keys never leave the source. See "Encrypted datasets" below |
 | `enabled` | no | `true` | Set `false` to bench a job: it is excluded from `sync`, globs, and `--host`, but still runs when named exactly (`sync <name>`), and `list` marks it `(disabled)` |
 
@@ -99,6 +100,20 @@ Two per-job settings tune how the stream is sent:
 - **`bwlimit`** caps throughput by piping the stream through `mbuffer -R` on the
   host running zfsreplicate (e.g. `bwlimit: 50m`). It requires `mbuffer`
   (`pkg install mbuffer`); without `bwlimit` set, `mbuffer` is not needed.
+
+## Cascading replicas
+
+To fan a dataset out to several destinations without multiplying load on the
+origin host, replicate once to a hub and re-ship the hub's replica onward
+(A → hub → B, C). The downstream jobs set `create_snapshot: false`: the hub's
+copy is a receive target, so any snapshot created locally on it would be
+destroyed by the next inbound `recv -F` — instead the cascade job ships the
+newest managed snapshot the upstream job already delivered, and never prunes
+the source. Use the **same** `snapshot_prefix` as the upstream job, and
+schedule cascades after the inbound run (e.g. inbound on the hour, cascades at
+:30). Raw replicas re-ship raw (`raw_send: true`) without any keys on the hub.
+The whole chain then shares one snapshot lineage, and destination retention is
+still enforced per cascade job via `keep_snapshots`.
 
 ## Encrypted datasets
 
