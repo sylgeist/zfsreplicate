@@ -134,7 +134,7 @@ class TestReplicatorRun < Minitest::Test
     assert_equal 1, @src.pipelines.length
     send_cmd, recv_cmd = @src.pipelines.first
     assert_match /\Azfs send tank\/vms@zfsreplicate-20260420-000000\z/, send_cmd
-    assert_match /zfs recv -F -s backup\/vms/, recv_cmd
+    assert_match /zfs recv -u -F -s -x mountpoint backup\/vms/, recv_cmd
   end
 
   def test_full_send_to_fresh_destination
@@ -147,7 +147,7 @@ class TestReplicatorRun < Minitest::Test
     assert_equal 1, @src.pipelines.length
     send_cmd, recv_cmd = @src.pipelines.first
     assert_match /\Azfs send tank\/vms@zfsreplicate-20260420-000000\z/, send_cmd
-    assert_match /zfs recv -F -s backup\/vms/, recv_cmd
+    assert_match /zfs recv -u -F -s -x mountpoint backup\/vms/, recv_cmd
   end
 
   def test_incremental_send_when_common_exists
@@ -321,7 +321,7 @@ class TestReplicatorRun < Minitest::Test
     rep.run
     assert_equal 2, @src.pipelines.length
     assert_equal 'zfs send -t 1-resumetoken', @src.pipelines[1][0]
-    assert_equal 'zfs recv -s backup/vms', @src.pipelines[1][1]
+    assert_equal 'zfs recv -u -s -x mountpoint backup/vms', @src.pipelines[1][1]
     assert_equal [5], @delays
   end
 
@@ -350,7 +350,7 @@ class TestReplicatorRun < Minitest::Test
     rep.run
     # First pipeline is the leftover resume; a fresh send follows.
     assert_equal 'zfs send -t 1-leftover', @src.pipelines[0][0]
-    assert_equal 'zfs recv -s backup/vms', @src.pipelines[0][1]
+    assert_equal 'zfs recv -u -s -x mountpoint backup/vms', @src.pipelines[0][1]
     assert_equal 2, @src.pipelines.length
     # The leftover resume happens before the new source snapshot is created.
     resume_idx = @src.events.index { |kind, v| kind == :pipeline && v == 'zfs send -t 1-leftover' }
@@ -391,7 +391,7 @@ class TestReplicatorRun < Minitest::Test
     )
     assert_raises(ZFSReplicate::ExecutorError) { rep.run }
     assert_equal 1, @src.pipelines.length
-    assert_equal 'zfs recv -F backup/vms', @src.pipelines[0][1]
+    assert_equal 'zfs recv -u -F -x mountpoint backup/vms', @src.pipelines[0][1]
     assert_empty @delays
   end
 

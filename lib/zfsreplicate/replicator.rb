@@ -62,10 +62,16 @@ module ZFSReplicate
             "(pkg install mbuffer)"
     end
 
+    # Backups must never mount over the live system: -u skips mounting at
+    # receive time, and -x mountpoint strips the property from the stream so
+    # every received dataset inherits the destination parent's mountpoint
+    # (none, in a conventional backup tree) — including children that arrive
+    # in future streams. To restore FROM a backup, set a mountpoint explicitly.
     def self.recv_command(dataset:, fresh:, resumable:)
-      parts = ['zfs recv']
+      parts = ['zfs recv', '-u']
       parts << '-F' if fresh
       parts << '-s' if resumable
+      parts << '-x mountpoint'
       parts << dataset
       parts.join(' ')
     end
