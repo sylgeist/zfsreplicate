@@ -130,12 +130,22 @@ replications:
   # raw: the destination stores ciphertext, and browsing/restoring requires
   # `zfs load-key` with the mail key. ESCROW THAT KEY off imap01 (vault), or
   # losing the host also loses the ability to read its backups.
+  #
+  # Mail runs on its own hourly cron line (the per-job lock makes overlap with
+  # the nightly run harmless), so keep_snapshots is sized in hours — 168 = one
+  # week:
+  #   0 * * * *  root  /usr/local/bin/zfsreplicate sync imap01-mail
+  #
+  # host: must resolve to the droplet's own public address — not the floating
+  # IP (breaks lineage/host keys on failover) and not a WireGuard/tunnel name
+  # (single-stream tunnel throughput caps bulk sends at a fraction of the
+  # real path bandwidth).
   - name: imap01-mail
     source:      { host: imap01.risei.net, port: 1978, identity: /root/.ssh/replication, dataset: zroot/imap }
     destination: { dataset: tank/remotebackups/imap }
     raw_send: true
     recursive: true
-    keep_snapshots: 30
+    keep_snapshots: 168
     max_retries: 0
 
   # NOTE: in the original script this sat under the imap.risei.net ping guard but
