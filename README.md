@@ -71,7 +71,7 @@ zfsreplicate -c /etc/zfsreplicate.yml list
 | `max_retries` | no | `3` | Retries after the first attempt (≤ 4 tries total) |
 | `retry_delay` | no | `5` | Base seconds for exponential backoff (5s, 10s, 20s…) |
 | `compressed_send` | no | `true` | Send blocks in their on-disk compressed form (`zfs send -c`); set `false` if the receiver lacks the compression feature |
-| `bwlimit` | no | *(none)* | Throttle transfer rate via a local `mbuffer -R` stage (e.g. `50m`, `1G`); requires `mbuffer` (`pkg install mbuffer`) on the host running zfsreplicate |
+| `bwlimit` | no | *(none)* | Throttle transfer rate via a local `mbuffer -R` stage; requires `mbuffer` (`pkg install mbuffer`) on the host running zfsreplicate. **Units are BYTES/sec** (`1m` = 1 MiB/s ≈ 8 Mbit/s) |
 | `timeout` | no | *(none)* | Kill a transfer attempt stuck longer than this many seconds and let retry/backoff take over; set with `max_retries: 0` for fail-fast |
 | `create_snapshot` | no | `true` | Set `false` for cascade jobs that re-ship a replica: the job neither creates nor prunes snapshots on the source (the upstream job owns that lineage) and sends the newest existing managed snapshot. See "Cascading replicas" below |
 | `raw_send` | no | `false` | Use raw streams (`zfs send -w`): blocks ship exactly as stored, so encrypted datasets stay ciphertext on the destination and keys never leave the source. See "Encrypted datasets" below |
@@ -98,8 +98,11 @@ Two per-job settings tune how the stream is sent:
   when the destination pool lacks the relevant compression feature, or when you
   want the destination to recompress with a different setting.
 - **`bwlimit`** caps throughput by piping the stream through `mbuffer -R` on the
-  host running zfsreplicate (e.g. `bwlimit: 50m`). It requires `mbuffer`
-  (`pkg install mbuffer`); without `bwlimit` set, `mbuffer` is not needed.
+  host running zfsreplicate. It requires `mbuffer` (`pkg install mbuffer`);
+  without `bwlimit` set, `mbuffer` is not needed. **The value is in bytes per
+  second, not bits**: `1m` = 1 MiB/s ≈ 8 Mbit/s of line rate, so to leave room
+  on a 25 Mbit/s uplink you want `1m`-`2m`, not `8m` (which is ≈67 Mbit/s — no
+  throttle at all on such a link).
 
 ## Cascading replicas
 
