@@ -531,4 +531,63 @@ class TestReplicatorRun < Minitest::Test
     assert_match(/be1/, err.message)
     refute_match(/scratch/, err.message)
   end
+
+  # A -R stream is received child-by-child, so an interrupted or failed run
+  # leaves the destination uneven: the top-level dataset is ahead of some
+  # children. zfs recv skips snapshots the destination already holds, so the
+  # right incremental base is the newest tag EVERY member has — not the
+  # top-level's newest, which the laggards reject as "does not match
+  # incremental source".
+  def test_uneven_destination_sends_from_the_tag_every_member_has
+    src_r = SRC_THREE +
+            "tank/vms/child@zfsreplicate-20260401-000000\n" \
+            "tank/vms/child@zfsreplicate-20260410-000000\n" \
+            "tank/vms/child@zfsreplicate-20260420-000000\n"
+    dst_r_before = DST_TWO + "backup/vms/child@zfsreplicate-20260401-000000\n" # child behind
+    dst_r_after  = DST_THREE + "backup/vms/child@zfsreplicate-20260420-000000\n"
+    rep = build(
+      [[/zfs list -t snapshot -r /, src_r],
+       [/zfs list -t snapshot -d 1 /, SRC_THREE]],
+      [[/zfs list -t snapshot -r /, [dst_r_before, dst_r_after]],
+       [/zfs list -t snapshot -d 1 /, [DST_TWO, DST_THREE]]],
+      replication(recursive: true, keep: 1)
+    )
+    rep.run
+    assert_equal 1, @src.pipelines.length
+    assert_match(/ -I tank\/vms@zfsreplicate-20260401-000000 tank\/vms@zfsreplicate-20260420-000000\z/,
+                 @src.pipelines.first.first)
+  end
+
+  def test_excluded_members_do_not_hold_back_the_common_tag
+    src_r = SRC_THREE + "tank/vms/scratch@zfsreplicate-20260401-000000\n"
+    dst_r_before = DST_TWO + "backup/vms/scratch@zfsreplicate-20260401-000000\n"
+    dst_r_after  = DST_THREE
+    rep = build(
+      [[/zfs list -t snapshot -r /, src_r],
+       [/zfs list -t snapshot -d 1 /, SRC_THREE]],
+      [[/zfs list -t snapshot -r /, [dst_r_before, dst_r_after]],
+       [/zfs list -t snapshot -d 1 /, [DST_TWO, DST_THREE]]],
+      replication(recursive: true, keep: 1, exclude: ['scratch'])
+    )
+    rep.run
+    assert_match(/ -I tank\/vms@zfsreplicate-20260410-000000 /, @src.pipelines.first.first)
+  end
+
+  # A member whose snapshots share nothing with the top-level's would make
+  # zfs recv fail mid-stream (another partial receive). Refuse up front and
+  # name it.
+  def test_member_sharing_no_tag_with_top_level_fails_before_sending
+    src_r = SRC_THREE + "tank/vms/child@zfsreplicate-20260420-000000\n"
+    dst_r = DST_TWO + "backup/vms/child@zfsreplicate-20260301-000000\n"
+    rep = build(
+      [[/zfs list -t snapshot -r /, src_r],
+       [/zfs list -t snapshot -d 1 /, SRC_THREE]],
+      [[/zfs list -t snapshot -r /, dst_r],
+       [/zfs list -t snapshot -d 1 /, DST_TWO]],
+      replication(recursive: true, keep: 1)
+    )
+    err = assert_raises(ZFSReplicate::ExecutorError) { rep.run }
+    assert_match(/child/, err.message)
+    assert_empty @src.pipelines, "must not start a transfer that will land partially"
+  end
 end

@@ -242,7 +242,13 @@ Each `sync` run:
 
 1. Creates a new timestamped snapshot on the source dataset
 2. Lists managed snapshots on source and destination
-3. Finds the most recent common snapshot (by tag)
+3. Finds the most recent common snapshot (by tag). For recursive jobs this is
+   the newest tag **every** destination member holds: a failed or interrupted
+   `-R` receive lands child-by-child and leaves the top-level ahead of some
+   children, and `zfs recv` skips snapshots a member already has, so sending
+   from the laggards' tag heals the subtree in one ordinary incremental
+   (logged as "subtree is uneven"). A member holding no snapshot the source
+   still has cannot be caught up by any base and fails the job by name
 4. Sends an **incremental** stream (`zfs send -I`) if a common snapshot exists, or a **full** stream if the destination is empty. If the destination already holds the latest snapshot (possible with future-dated snapshots or clock skew, which also log a warning), the transfer is skipped with an INFO line and the run continues to pruning
 5. Verifies the destination now holds the latest snapshot (a resumed stream can
    cover only part of an incremental package; if the destination is still

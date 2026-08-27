@@ -15,6 +15,35 @@ module ZFSReplicate
       src_snaps.select { |s| dst_tags.include?(s.tag) }.max
     end
 
+    # Recursive receives apply child-by-child, so a failed or interrupted run
+    # leaves the destination uneven: the top-level is ahead of some members.
+    # zfs recv skips snapshots the destination already holds, so the right
+    # incremental base is the newest tag EVERY member has — the top-level's
+    # newest would make the laggards fail with "does not match incremental
+    # source" and land yet another partial stream. A member on a lineage the
+    # source no longer has at all (none of its tags exist there) cannot be
+    # caught up by any base; refuse and name it rather than start a transfer
+    # that will die mid-way. A member that merely holds none of the candidate
+    # tags but is otherwise known to the source (e.g. already ahead of the
+    # top-level) does not constrain the choice — recv skips what it has.
+    def self.subtree_common_snapshot(src_snaps, dst_snaps, member_tags, excluded: ->(_rel) { false })
+      top = common_snapshot(src_snaps, dst_snaps)
+      return nil unless top
+      src_tags   = src_snaps.map(&:tag)
+      candidates = src_snaps.select { |s| dst_snaps.any? { |d| d.tag == s.tag } }.sort.reverse
+      members = member_tags.reject { |rel, tags| rel == '' || tags.empty? || excluded.call(rel) }
+      orphans = members.select { |_, tags| (tags & src_tags).empty? }.keys
+      unless orphans.empty?
+        raise ExecutorError,
+              "Destination member(s) #{orphans.sort.join(', ')} hold no managed " \
+              "snapshot the source still has; an incremental would land " \
+              "partially. Send them manually to a common tag (or destroy and " \
+              "re-seed them), then re-run."
+      end
+      constraining = members.values.select { |tags| (tags & candidates.map(&:tag)).any? }
+      candidates.find { |c| constraining.all? { |tags| tags.include?(c.tag) } }
+    end
+
     # raw (-w) ships blocks exactly as stored — for encrypted datasets that
     # means ciphertext, keys never leaving the source. -c is meaningless
     # alongside -w (raw blocks are already compressed as on disk).
@@ -153,6 +182,21 @@ module ZFSReplicate
       dst_snaps = dst_exists ? dst_ds.managed_snapshots(prefix: @cfg.snapshot_prefix) : []
       latest    = src_snaps.max
       common    = self.class.common_snapshot(src_snaps, dst_snaps)
+      if @cfg.recursive && common
+        subtree = self.class.subtree_common_snapshot(
+          src_snaps, dst_snaps,
+          dst_ds.managed_tags_by_descendant(prefix: @cfg.snapshot_prefix),
+          excluded: ->(rel) { excluded?(rel) }
+        )
+        if subtree && subtree.tag != common.tag
+          ZFSReplicate.logger.info(
+            "Destination #{@cfg.destination.dataset} subtree is uneven (some " \
+            "members are behind the top-level's #{common.tag}); sending from " \
+            "#{subtree.tag} so they catch up"
+          )
+          common = subtree
+        end
+      end
 
       if latest.nil?
         raise ExecutorError,
