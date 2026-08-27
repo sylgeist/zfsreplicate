@@ -164,6 +164,8 @@ if $ZR -c "$WORK/excl.yml" sync >"$WORK/s8a.log" 2>&1; then
 else
   fail "sync with exclude exited non-zero: $(tail -3 "$WORK/s8a.log")"
 fi
+# Later scenarios run without the exclude; leave them the tree they expect.
+zfs destroy -r "$SRC_POOL/data/scratch"
 
 # --- S6: interrupted transfer leaves a token; next run resumes it -----------
 say "S6: interrupt via job timeout, then resume"

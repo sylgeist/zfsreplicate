@@ -56,6 +56,21 @@ module ZFSReplicate
       end.uniq
     end
 
+    # Managed snapshot tags per subtree member, keyed by relative path ('' for
+    # this dataset). A -R stream lands child-by-child, so after a failed or
+    # interrupted run the members can legitimately disagree on their newest
+    # tag; this is the input for choosing an incremental base they all hold.
+    def managed_tags_by_descendant(prefix:)
+      raw = @executor.run("zfs list -t snapshot -r -H -o name #{@name}")
+      raw.lines.map(&:chomp).reject(&:empty?).each_with_object({}) do |line, acc|
+        ds, = line.split('@', 2)
+        next unless ds == @name || ds.start_with?("#{@name}/")
+        snap = Snapshot.parse(line)
+        next unless snap.prefix == prefix
+        (acc[ds.delete_prefix(@name).delete_prefix('/')] ||= []) << snap.tag
+      end
+    end
+
     def create_snapshot(tag, recursive: false)
       @executor.run("zfs snapshot#{' -r' if recursive} #{@name}@#{tag}")
     end
