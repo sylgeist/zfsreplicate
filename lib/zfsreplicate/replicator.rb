@@ -18,9 +18,11 @@ module ZFSReplicate
     # raw (-w) ships blocks exactly as stored — for encrypted datasets that
     # means ciphertext, keys never leaving the source. -c is meaningless
     # alongside -w (raw blocks are already compressed as on disk).
-    def self.send_command(latest:, common:, recursive:, compressed:, raw: false)
+    # exclude: absolute dataset names dropped from a -R stream (zfs send -X).
+    def self.send_command(latest:, common:, recursive:, compressed:, raw: false, exclude: [])
       flags = +''
       flags << ' -R' if recursive
+      exclude.each { |ds| flags << " -X #{ds}" }
       flags << ' -w' if raw
       flags << ' -c' if compressed && !raw
       if common
@@ -182,7 +184,8 @@ module ZFSReplicate
         fresh_send = self.class.send_command(latest: latest, common: common,
                                              recursive: @cfg.recursive,
                                              compressed: @cfg.compressed_send,
-                                             raw: @cfg.raw_send)
+                                             raw: @cfg.raw_send,
+                                             exclude: excluded_relative.map { |rel| "#{@cfg.source.dataset}/#{rel}" })
         recv_fresh = self.class.recv_command(dataset: @cfg.destination.dataset,
                                              fresh: true, resumable: @cfg.resume)
 
@@ -208,8 +211,9 @@ module ZFSReplicate
       # while a child never arrived (e.g. a boot environment born after a seed
       # snapshot). Compare which subtree members hold `latest` on each side.
       if @cfg.recursive
-        missing = src_ds.descendants_with_snapshot(latest.tag) -
-                  dst_ds.descendants_with_snapshot(latest.tag)
+        missing = (src_ds.descendants_with_snapshot(latest.tag) -
+                   dst_ds.descendants_with_snapshot(latest.tag))
+                  .reject { |rel| excluded?(rel) }
         unless missing.empty?
           raise ExecutorError,
                 "Destination #{@cfg.destination.dataset} is missing child " \
@@ -237,6 +241,15 @@ module ZFSReplicate
     end
 
     private
+
+    def excluded_relative
+      @cfg.exclude || []
+    end
+
+    # Excluding a dataset excludes everything beneath it, as -X does.
+    def excluded?(rel)
+      excluded_relative.any? { |ex| rel == ex || rel.start_with?("#{ex}/") }
+    end
 
     def perform_transfer(src_exec, dst_exec, dst_ds, fresh_send:, recv_fresh:, recv_resume:)
       attempt = 0

@@ -16,7 +16,7 @@ module ZFSReplicate
   ReplicationConfig = Struct.new(
     :name, :source, :destination, :recursive, :keep_snapshots, :snapshot_prefix,
     :force, :resume, :max_retries, :retry_delay, :compressed_send, :bwlimit, :timeout,
-    :enabled, :raw_send, :create_snapshot
+    :enabled, :raw_send, :create_snapshot, :exclude
   )
 
   class Config
@@ -26,7 +26,7 @@ module ZFSReplicate
     REPLICATION_KEYS = %w[name source destination recursive keep_snapshots
                           snapshot_prefix force resume max_retries retry_delay
                           compressed_send bwlimit timeout enabled raw_send
-                          create_snapshot].freeze
+                          create_snapshot exclude].freeze
     ENDPOINT_KEYS = %w[host user dataset port identity].freeze
 
     attr_reader :replications, :concurrency, :lock_dir, :warnings
@@ -96,8 +96,24 @@ module ZFSReplicate
         positive_int_or_nil(r, 'timeout'),
         boolean(r, 'enabled', true),
         boolean(r, 'raw_send', false),
-        boolean(r, 'create_snapshot', true)
+        boolean(r, 'create_snapshot', true),
+        exclude_list(r, name)
       )
+    end
+
+    # Subtree members a recursive job leaves out of the stream (`zfs send -X`),
+    # named relative to source.dataset so the same list describes both sides.
+    # Meaningless without -R, so it is an error rather than a silent no-op.
+    def exclude_list(r, name)
+      return [] unless r.key?('exclude')
+      value = r.fetch('exclude')
+      unless value.is_a?(Array) && !value.empty?
+        raise ConfigError, "'exclude' must be a non-empty list of dataset paths relative to source.dataset"
+      end
+      unless r.fetch('recursive', false) == true
+        raise ConfigError, "replication '#{name}' sets 'exclude' but not 'recursive: true' (-X only applies to -R streams)"
+      end
+      value.map { |v| zfs_name(v, 'exclude', allow_slash: true) }
     end
 
     def parse_endpoint(e, role)

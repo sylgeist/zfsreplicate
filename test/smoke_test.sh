@@ -137,6 +137,34 @@ else
   fail "forced sync failed: $(tail -3 "$WORK/s5.log")"
 fi
 
+# --- S8: exclude drops a subtree member whose own tooling eats our snapshots -
+# Models a poudriere base jail: it is rolled back to @clean before every
+# build, which destroys any newer snapshot on it. Without -X the next
+# incremental -R stream carries it as a NEW filesystem into a destination that
+# already has it, and the job wedges on "destination has snapshots".
+say "S8: exclude (zfs send -X) survives a rollback on the excluded child"
+zfs create "$SRC_POOL/data/scratch"
+zfs snapshot "$SRC_POOL/data/scratch@clean"
+write_config "$WORK/excl.yml" "exclude: [scratch]"
+sleep 1
+if $ZR -c "$WORK/excl.yml" sync >"$WORK/s8a.log" 2>&1; then
+  if zfs list -H -o name "$DST_DS/scratch" >/dev/null 2>&1; then
+    fail "excluded child was replicated anyway"
+  else
+    zfs rollback -r "$SRC_POOL/data/scratch@clean"   # destroys scratch@<prefix>-*
+    sleep 1
+    if $ZR -c "$WORK/excl.yml" sync >"$WORK/s8b.log" 2>&1 &&
+       [ "$(latest_tag "$DST_DS")" = "$(latest_tag "$SRC_POOL/data")" ] &&
+       ! zfs list -H -o name "$DST_DS/scratch" >/dev/null 2>&1; then
+      pass "excluded child never lands; incremental after its rollback still succeeds"
+    else
+      fail "sync after rollback of excluded child failed: $(tail -3 "$WORK/s8b.log")"
+    fi
+  fi
+else
+  fail "sync with exclude exited non-zero: $(tail -3 "$WORK/s8a.log")"
+fi
+
 # --- S6: interrupted transfer leaves a token; next run resumes it -----------
 say "S6: interrupt via job timeout, then resume"
 if command -v mbuffer >/dev/null 2>&1; then

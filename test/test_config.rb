@@ -422,4 +422,41 @@ class TestConfig < Minitest::Test
     assert_raises(ZFSReplicate::ConfigError) { ZFSReplicate::Config.load(f.path) }
     f.close
   end
+
+
+  # exclude: lists subtree members (relative to source.dataset) that a
+  # recursive job leaves out of the stream via `zfs send -X`.
+  def test_exclude_parses_relative_dataset_list
+    f = write_config(VALID_CONFIG + "    exclude: [scratch, pkg/data/jails/15_1amd64]\n")
+    rep = ZFSReplicate::Config.load(f.path).replications.first
+    assert_equal ['scratch', 'pkg/data/jails/15_1amd64'], rep.exclude
+    f.close
+  end
+
+  def test_exclude_defaults_to_empty
+    f = write_config(VALID_CONFIG)
+    assert_equal [], ZFSReplicate::Config.load(f.path).replications.first.exclude
+    f.close
+  end
+
+  def test_exclude_requires_recursive
+    yaml = VALID_CONFIG.sub('recursive: true', 'recursive: false') + "    exclude: [scratch]\n"
+    f = write_config(yaml)
+    err = assert_raises(ZFSReplicate::ConfigError) { ZFSReplicate::Config.load(f.path) }
+    assert_match(/exclude.*recursive/, err.message)
+    f.close
+  end
+
+  def test_exclude_must_be_a_list_of_relative_zfs_names
+    ["    exclude: scratch\n",            # not a list
+     "    exclude: [/scratch]\n",         # absolute
+     "    exclude: ['a;rm -rf /']\n",     # shell metacharacters
+     "    exclude: ['']\n"].each do |bad|
+      f = write_config(VALID_CONFIG + bad)
+      assert_raises(ZFSReplicate::ConfigError, "expected rejection of #{bad.strip}") do
+        ZFSReplicate::Config.load(f.path)
+      end
+      f.close
+    end
+  end
 end

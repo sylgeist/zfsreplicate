@@ -72,11 +72,11 @@ end
 def replication(force: false, keep: 7, recursive: false,
                 resume: true, max_retries: 3, retry_delay: 5,
                 compressed_send: false, bwlimit: nil, timeout: nil,
-                raw_send: false, create_snapshot: true)
+                raw_send: false, create_snapshot: true, exclude: [])
   ZFSReplicate::ReplicationConfig.new(
     'job', endpoint('tank/vms'), endpoint('backup/vms'),
     recursive, keep, 'zfsreplicate', force, resume, max_retries, retry_delay,
-    compressed_send, bwlimit, timeout, true, raw_send, create_snapshot
+    compressed_send, bwlimit, timeout, true, raw_send, create_snapshot, exclude
   )
 end
 
@@ -481,5 +481,54 @@ class TestReplicatorRun < Minitest::Test
     ensure
       ZFSReplicate::Replicator.define_singleton_method(:ensure_mbuffer!, original)
     end
+  end
+
+
+  # exclude: a subtree member whose own tooling destroys our snapshots (a
+  # poudriere base jail is rolled back to @clean before every build) would
+  # otherwise arrive as a "new filesystem" every run and wedge the job. It
+  # is dropped from the stream with -X and ignored by the subtree check.
+  def test_exclude_reaches_send_stage_as_absolute_names
+    rep = build(
+      [[/zfs list -t snapshot/, SRC_THREE]],
+      [[/zfs list -t snapshot/, [DST_TWO, DST_THREE]]],
+      replication(recursive: true, keep: 1, exclude: ['scratch', 'pkg/jails'])
+    )
+    rep.run
+    assert_match(/\Azfs send -R -X tank\/vms\/scratch -X tank\/vms\/pkg\/jails -I /,
+                 @src.pipelines.first.first)
+  end
+
+  def test_recursive_verify_ignores_excluded_subtree
+    src_r = SRC_THREE +
+            "tank/vms/scratch@zfsreplicate-20260420-000000\n" \
+            "tank/vms/scratch/sub@zfsreplicate-20260420-000000\n" \
+            "tank/vms/be1@zfsreplicate-20260420-000000\n"
+    dst_r = DST_THREE + "backup/vms/be1@zfsreplicate-20260420-000000\n" # no scratch
+    rep = build(
+      [[/zfs list -t snapshot -r /, src_r],
+       [/zfs list -t snapshot -d 1 /, SRC_THREE]],
+      [[/zfs list -t snapshot -r /, dst_r],
+       [/zfs list -t snapshot -d 1 /, [DST_TWO, DST_THREE]]],
+      replication(recursive: true, keep: 1, exclude: ['scratch'])
+    )
+    rep.run
+    refute_empty @src.commands.grep(/zfs destroy/), "expected pruning after clean verify"
+  end
+
+  def test_recursive_verify_still_catches_missing_non_excluded_child
+    src_r = SRC_THREE +
+            "tank/vms/scratch@zfsreplicate-20260420-000000\n" \
+            "tank/vms/be1@zfsreplicate-20260420-000000\n"
+    rep = build(
+      [[/zfs list -t snapshot -r /, src_r],
+       [/zfs list -t snapshot -d 1 /, SRC_THREE]],
+      [[/zfs list -t snapshot -r /, DST_THREE],
+       [/zfs list -t snapshot -d 1 /, [DST_TWO, DST_THREE]]],
+      replication(recursive: true, keep: 1, exclude: ['scratch'])
+    )
+    err = assert_raises(ZFSReplicate::ExecutorError) { rep.run }
+    assert_match(/be1/, err.message)
+    refute_match(/scratch/, err.message)
   end
 end

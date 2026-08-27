@@ -87,8 +87,9 @@ module ZFSReplicate
       cfg.replications.each do |r|
         src = r.source.local? ? r.source.dataset : "#{r.source.user}@#{r.source.host}:#{r.source.dataset}"
         dst = r.destination.local? ? r.destination.dataset : "#{r.destination.user}@#{r.destination.host}:#{r.destination.dataset}"
+        excl = r.exclude.to_a.empty? ? '' : " (exclude #{r.exclude.join(',')})"
         flag = r.enabled == false ? ' (disabled)' : ''
-        puts "#{r.name}: #{src} \u2192 #{dst} (keep #{r.keep_snapshots})#{flag}"
+        puts "#{r.name}: #{src} \u2192 #{dst} (keep #{r.keep_snapshots})#{excl}#{flag}"
       end
     rescue ConfigError => e
       warn "Config error: #{e.message}"

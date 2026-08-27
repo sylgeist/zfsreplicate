@@ -50,6 +50,10 @@ replications:
     destination: { dataset: tank/localbackups/jails }
     recursive: true
     keep_snapshots: 30
+    # poudriere rolls its base jail back to @clean before every build, which
+    # destroys our previous snapshot on it; without -X it re-arrives as a new
+    # filesystem every run. It is regenerable (poudriere jail -c), not backed up.
+    exclude: [pkg/data/jails/15_1amd64]
 
   - name: local-sendrecv
     source:      { dataset: zroot/sendrecv.io }
