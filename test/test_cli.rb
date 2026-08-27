@@ -134,6 +134,25 @@ class TestCLIParsing < Minitest::Test
     end
   end
 
+  # Monitoring parses `list`; excluded members must be visible there so a
+  # checker can leave them out of "never replicated" counts.
+  def test_list_shows_excludes_before_disabled_marker
+    Dir.mktmpdir do |dir|
+      cfg = File.join(dir, 'c.yml')
+      File.write(cfg, <<~YAML)
+        replications:
+          - name: jails
+            enabled: false
+            recursive: true
+            exclude: [pkg/data/jails/15_1amd64, scratch]
+            source: { dataset: zroot/jails }
+            destination: { dataset: tank/localbackups/jails }
+      YAML
+      out, = capture_io { ZFSReplicate::CLI.run(['-c', cfg, 'list']) }
+      assert_match(%r{jails: zroot/jails → tank/localbackups/jails \(keep 7\) \(exclude pkg/data/jails/15_1amd64,scratch\) \(disabled\)}, out)
+    end
+  end
+
   def test_select_jobs_exact_name
     picked = ZFSReplicate::CLI.select_jobs(fleet, names: ['io-git'], host: nil)
     assert_equal ['io-git'], picked.map(&:name)

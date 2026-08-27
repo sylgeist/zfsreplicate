@@ -75,6 +75,7 @@ zfsreplicate -c /etc/zfsreplicate.yml list
 | `timeout` | no | *(none)* | Kill a transfer attempt stuck longer than this many seconds and let retry/backoff take over; set with `max_retries: 0` for fail-fast |
 | `create_snapshot` | no | `true` | Set `false` for cascade jobs that re-ship a replica: the job neither creates nor prunes snapshots on the source (the upstream job owns that lineage) and sends the newest existing managed snapshot. See "Cascading replicas" below |
 | `raw_send` | no | `false` | Use raw streams (`zfs send -w`): blocks ship exactly as stored, so encrypted datasets stay ciphertext on the destination and keys never leave the source. See "Encrypted datasets" below |
+| `exclude` | no | *(none)* | Recursive jobs only: list of dataset paths **relative to `source.dataset`** to leave out of the stream (`zfs send -X`, OpenZFS ≥ 2.1). Each entry excludes its whole subtree, and the subtree check ignores it. Use it for a child whose own tooling destroys snapshots (a poudriere base jail is `zfs rollback -r`'d to `@clean` before every build), which would otherwise turn up as a *new* filesystem in every incremental and wedge the job on `destination has snapshots`. `list` shows it as `(exclude a,b)` |
 | `enabled` | no | `true` | Set `false` to bench a job: it is excluded from `sync`, globs, and `--host`, but still runs when named exactly (`sync <name>`), and `list` marks it `(disabled)` |
 
 Job names must be unique (they key the per-job lock files), and unrecognized
@@ -250,7 +251,8 @@ Each `sync` run:
    snapshot on the source must hold it on the destination too, so a child the
    destination never received (e.g. a boot environment created after an
    incremental seed) fails the job by name instead of surfacing runs later as
-   a cryptic `zfs recv` error
+   a cryptic `zfs recv` error. Members listed in `exclude` are left out of the
+   stream (`-X`) and of this check
 6. Prunes old managed snapshots on both sides, keeping the most recent `keep_snapshots`
 
 If there is no common snapshot and the destination dataset **already exists**, the job aborts rather than overwriting it with a full `zfs recv -F`. To opt into the overwrite, re-run with the one-shot `--force` flag naming the jobs (`zfsreplicate --force sync 'rhea-*'`) — or `zfs destroy` the stale destination first. `--force` deliberately refuses to run without a job selection, so a forced run always says what it is forcing. A full send to a destination that does not yet exist is always allowed.

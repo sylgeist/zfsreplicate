@@ -223,4 +223,34 @@ class TestReplicatorTransport < Minitest::Test
     end
     assert_match(/mbuffer/, err.message)
   end
+
+
+class TestReplicatorExclude < Minitest::Test
+  include ZFSReplicate
+
+  def test_recursive_send_adds_x_per_excluded_dataset
+    latest = make_snap('tank/vms', 'zfsreplicate-20260420-000000')
+    common = make_snap('tank/vms', 'zfsreplicate-20260410-000000')
+    cmd = Replicator.send_command(latest: latest, common: common, recursive: true,
+                                  compressed: false,
+                                  exclude: ['tank/vms/scratch', 'tank/vms/pkg/jails'])
+    assert_equal 'zfs send -R -X tank/vms/scratch -X tank/vms/pkg/jails ' \
+                 '-I tank/vms@zfsreplicate-20260410-000000 tank/vms@zfsreplicate-20260420-000000',
+                 cmd
+  end
+
+  def test_full_send_also_honours_exclude
+    latest = make_snap('tank/vms', 'zfsreplicate-20260420-000000')
+    cmd = Replicator.send_command(latest: latest, common: nil, recursive: true,
+                                  compressed: false, exclude: ['tank/vms/scratch'])
+    assert_equal 'zfs send -R -X tank/vms/scratch tank/vms@zfsreplicate-20260420-000000', cmd
+  end
+
+  def test_no_exclude_leaves_command_unchanged
+    latest = make_snap('tank/vms', 'zfsreplicate-20260420-000000')
+    cmd = Replicator.send_command(latest: latest, common: nil, recursive: true,
+                                  compressed: false, exclude: [])
+    assert_equal 'zfs send -R tank/vms@zfsreplicate-20260420-000000', cmd
+  end
+end
 end
